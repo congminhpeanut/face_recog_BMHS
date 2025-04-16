@@ -1,0 +1,190 @@
+import streamlit as st
+import cv2
+import numpy as np
+import sqlite3
+import insightface
+from PIL import Image
+import time
+import gc
+
+# Khởi tạo cơ sở dữ liệu
+def init_db():
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS students
+                 (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS sessions
+                 (id INTEGER PRIMARY KEY, date TEXT, time TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS attendance
+                 (session_id INTEGER, student_id INTEGER, status TEXT, timestamp TEXT)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# Lớp nhận diện khuôn mặt
+class FaceRecognizer:
+    def __init__(self):
+        self.app = insightface.app.FaceAnalysis()
+        self.app.prepare(ctx_id=0)  # Sử dụng CPU
+
+    def get_embedding(self, image):
+        faces = self.app.get(image)
+        if len(faces) == 1:
+            return faces[0].embedding
+        return None
+
+# Cache mô hình để tránh tải lại
+@st.cache_resource
+def get_recognizer():
+    return FaceRecognizer()
+
+recognizer = get_recognizer()
+
+# Tải embedding của sinh viên
+def load_embeddings():
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT id, embedding FROM students")
+    students = c.fetchall()
+    conn.close()
+    embeddings = []
+    ids = []
+    for student in students:
+        id = student[0]
+        embedding = np.frombuffer(student[1], dtype=np.float32)
+        ids.append(id)
+        embeddings.append(embedding)
+    return ids, embeddings
+
+ids, embeddings = load_embeddings()
+
+# Tìm sinh viên khớp nhất
+def find_closest_match(embedding, ids, embeddings, threshold=1.0):
+    if not embeddings:
+        return None
+    distances = [np.linalg.norm(embedding - emb) for emb in embeddings]
+    min_distance = min(distances)
+    if min_distance < threshold:
+        index = distances.index(min_distance)
+        return ids[index]
+    return None
+
+# Tạo phiên điểm danh mới
+def create_new_session():
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO sessions (date, time) VALUES (date('now'), time('now'))")
+    session_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return session_id
+
+# Ghi nhận điểm danh
+def mark_attendance(session_id, student_id):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp) VALUES (?, ?, 'present', datetime('now'))",
+              (session_id, student_id))
+    conn.commit()
+    conn.close()
+
+# CSS để làm giao diện chuyên nghiệp
+st.markdown("""
+<style>
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f4f4f9;
+}
+h1, h2 {
+    color: #2c3e50;
+    text-align: center;
+}
+.stButton>button {
+    background-color: #3498db;
+    color: white;
+    border-radius: 5px;
+    padding: 10px 20px;
+    font-size: 16px;
+}
+.stTextInput>div>input {
+    border: 1px solid #3498db;
+    border-radius: 5px;
+    padding: 8px;
+}
+.sidebar .sidebar-content {
+    background-color: #ecf0f1;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Ứng dụng Streamlit
+st.sidebar.title("Điều Hướng")
+page = st.sidebar.radio("Chọn Trang", ["Đăng Ký Sinh Viên", "Điểm Danh", "Xem Điểm Danh"])
+
+if page == "Đăng Ký Sinh Viên":
+    st.header("Đăng Ký Sinh Viên")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        image_file = st.camera_input("Chụp ảnh sinh viên")
+    with col2:
+        name = st.text_input("Tên Sinh Viên")
+        if st.button("Đăng Ký") and image_file is not None and name:
+            image = Image.open(image_file)
+            img_array = np.array(image)
+            embedding = recognizer.get_embedding(img_array)
+            if embedding is not None:
+                conn = sqlite3.connect('attendance.db')
+                c = conn.cursor()
+                c.execute("INSERT INTO students (name, embedding) VALUES (?, ?)", (name, embedding.tobytes()))
+                conn.commit()
+                conn.close()
+                st.success(f"Đã đăng ký sinh viên {name} thành công!")
+                ids, embeddings = load_embeddings()
+            else:
+                st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
+
+elif page == "Điểm Danh":
+    st.header("Điểm Danh Buổi Học")
+    if st.button("Bắt Đầu Điểm Danh"):
+        recognized_students = set()
+        cap = cv2.VideoCapture(0)
+        start_time = time.time()
+        st.info("Đang điểm danh... Vui lòng chờ 60 giây.")
+        while time.time() - start_time < 60:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            faces = recognizer.app.get(frame)
+            for face in faces:
+                embedding = face.embedding
+                student_id = find_closest_match(embedding, ids, embeddings)
+                if student_id is not None:
+                    recognized_students.add(student_id)
+        cap.release()
+        session_id = create_new_session()
+        for student_id in recognized_students:
+            mark_attendance(session_id, student_id)
+        st.success(f"Đã ghi nhận điểm danh cho {len(recognized_students)} sinh viên!")
+        gc.collect()
+
+elif page == "Xem Điểm Danh":
+    st.header("Xem Danh Sách Điểm Danh")
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT id, date, time FROM sessions")
+    sessions = c.fetchall()
+    session_options = [f"Buổi {s[0]} ngày {s[1]} lúc {s[2]}" for s in sessions]
+    selected_session = st.selectbox("Chọn Buổi", session_options)
+    if selected_session:
+        session_id = int(selected_session.split()[1])
+        c.execute("SELECT s.name FROM students s JOIN attendance a ON s.id = a.student_id WHERE a.session_id = ? AND a.status = 'present'",
+                  (session_id,))
+        present_students = [row[0] for row in c.fetchall()]
+        st.subheader("Danh sách sinh viên có mặt:")
+        if present_students:
+            for student in present_students:
+                st.write(f"- {student}")
+        else:
+            st.write("Không có sinh viên nào được ghi nhận.")
+    conn.close()
