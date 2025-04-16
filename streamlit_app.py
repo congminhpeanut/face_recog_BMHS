@@ -129,11 +129,11 @@ h1, h2 {
 """, unsafe_allow_html=True)
 
 # Ứng dụng Streamlit
-st.sidebar.title("Điều Hướng")
-page = st.sidebar.radio("Chọn Trang", ["Đăng Ký Sinh Viên", "Điểm Danh", "Xem Điểm Danh"])
+st.title("Ứng Dụng Điểm Danh Sinh Viên")
+page = st.sidebar.selectbox("Chọn chức năng", ["Điểm Danh", "Đăng Ký Sinh Viên"])
 
 if page == "Đăng Ký Sinh Viên":
-    st.header("Đăng Ký Sinh Viên")
+    st.header("Đăng Ký Sinh Viên Mới")
     col1, col2 = st.columns([2, 1])
     with col1:
         image_file = st.camera_input("Chụp ảnh sinh viên")
@@ -169,33 +169,33 @@ elif page == "Điểm Danh":
     
     if selected_session:
         session_id = int(selected_session.split()[1])
-        if st.button("Bắt Đầu Điểm Danh"):
-            st.info("Đang điểm danh... Nhấn 'Dừng Điểm Danh' để kết thúc.")
-            cap = cv2.VideoCapture(-1)  # Thay index 1 thành 0
-            if not cap.isOpened():
-                st.error("Không thể mở camera. Vui lòng kiểm tra kết nối hoặc index camera.")
-                st.stop()
-            recognized_students = set()
-            placeholder = st.empty()
-            stop_button = st.button("Dừng Điểm Danh")
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                faces = recognizer.app.get(frame)
-                for face in faces:
-                    embedding = face.embedding
-                    student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
-                    if student_id is not None and student_id not in recognized_students:
-                        recognized_students.add(student_id)
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        mark_attendance(session_id, student_id, timestamp)
-                        placeholder.success(f"Đã điểm danh: {student_name} lúc {timestamp}")
-                if stop_button:
-                    break
-            cap.release()
-            gc.collect()
-            st.success("Đã dừng quá trình điểm danh.")
+        st.subheader("Chụp hoặc tải ảnh để điểm danh")
+        
+        # Widget để chụp ảnh hoặc tải lên ảnh
+        image_file = st.camera_input("Chụp ảnh để điểm danh")  # Cho phép chụp ảnh
+        
+        # Tùy chọn tải lên ảnh nếu không muốn dùng camera
+        uploaded_file = st.file_uploader("Hoặc tải lên ảnh để điểm danh", type=["jpg", "png", "jpeg"])
+        
+        # Xử lý ảnh từ camera hoặc file tải lên
+        if image_file is not None or uploaded_file is not None:
+            # Ưu tiên ảnh từ camera nếu có, nếu không thì dùng ảnh tải lên
+            file_to_process = image_file if image_file is not None else uploaded_file
+            image = Image.open(file_to_process)
+            img_array = np.array(image)
+            faces = recognizer.app.get(img_array)
+            
+            if len(faces) == 1:
+                embedding = faces[0].embedding
+                student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
+                if student_id is not None:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    mark_attendance(session_id, student_id, timestamp)
+                    st.success(f"Đã điểm danh: {student_name} lúc {timestamp}")
+                else:
+                    st.error("Không nhận diện được sinh viên trong ảnh.")
+            else:
+                st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng chụp hoặc tải lại.")
             
 elif page == "Xem Điểm Danh":
     st.header("Xem Danh Sách Điểm Danh")
