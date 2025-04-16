@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import os
 import pytz
 import logging
+import asyncio
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -285,19 +286,26 @@ elif page == "Điểm Danh Realtime":
                     logger.error(f"Error in transform: {e}")
                     return frame
 
-        # WebRTC configuration with STUN server
+        # WebRTC configuration with multiple STUN servers
         rtc_config = RTCConfiguration({
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]}
+            ]
         })
 
-        # Start WebRTC streamer
+        # Start WebRTC streamer with error handling
         try:
-            webrtc_streamer(
+            webrtc_ctx = webrtc_streamer(
                 key="attendance",
                 video_processor_factory=VideoProcessor,
                 rtc_configuration=rtc_config,
-                media_stream_constraints={"video": True, "audio": False}
+                media_stream_constraints={"video": True, "audio": False},
+                async_processing=True  # Enable asynchronous processing
             )
+            if not webrtc_ctx.state.playing:
+                st.warning("Luồng video không hoạt động. Vui lòng kiểm tra kết nối camera.")
         except Exception as e:
             st.error(f"Không thể khởi động luồng video: {e}")
             logger.error(f"WebRTC streamer error: {e}")
