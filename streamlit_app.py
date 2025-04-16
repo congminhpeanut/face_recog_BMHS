@@ -9,9 +9,17 @@ import gc
 from datetime import datetime, timedelta
 import os
 import pytz
+import uuid
 
 # Thiết lập múi giờ Việt Nam (UTC+7)
 tz = pytz.timezone('Asia/Ho_Chi_Minh')
+
+# Tạo khóa duy nhất cho camera_input
+camera_key = str(uuid.uuid4())
+
+# Khởi tạo session state để quản lý trạng thái reset
+if 'camera_reset' not in st.session_state:
+    st.session_state.camera_reset = False
 
 # Khởi tạo cơ sở dữ liệu
 def init_db():
@@ -160,6 +168,10 @@ def get_attendance_list(session_id):
     conn.close()
     return attendance_list
 
+# Hàm reset khung ảnh
+def reset_camera():
+    st.session_state.camera_reset = True
+
 # CSS để làm giao diện chuyên nghiệp
 st.markdown("""
 <style>
@@ -197,7 +209,11 @@ if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
     col1, col2 = st.columns([2, 1])
     with col1:
-        image_file = st.camera_input("Chụp ảnh sinh viên")
+        # Hiển thị widget camera_input với khóa duy nhất
+        image_file = st.camera_input("Chụp ảnh sinh viên", key=camera_key)
+        if st.button("Clear photo"):
+            reset_camera()
+            st.experimental_rerun()  # Chạy lại ứng dụng để reset camera
     with col2:
         name = st.text_input("Tên Sinh Viên")
         if st.button("Đăng Ký") and image_file is not None and name:
@@ -224,7 +240,6 @@ if page == "Đăng Ký Sinh Viên":
                 ids, names, embeddings = load_embeddings()
             else:
                 st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
-
 elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
     
