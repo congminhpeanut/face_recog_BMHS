@@ -163,7 +163,7 @@ elif page == "Điểm Danh":
         session_id = int(selected_session.split()[1])
         if st.button("Bắt Đầu Điểm Danh"):
             st.info("Đang điểm danh... Nhấn 'Dừng Điểm Danh' để kết thúc.")
-            cap = cv2.VideoCapture(1)
+            cap = cv2.VideoCapture(0)
             recognized_students = set()
             placeholder = st.empty()
             stop_button = st.button("Dừng Điểm Danh")
