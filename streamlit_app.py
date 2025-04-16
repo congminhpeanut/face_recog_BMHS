@@ -205,6 +205,11 @@ h1, h2 {
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
 page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"])
 
+if "page" not in st.session_state:
+    st.session_state.page = "Đăng Ký Sinh Viên"
+
+page = st.session_state.page
+
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
     col1, col2 = st.columns([2, 1])
@@ -219,7 +224,8 @@ if page == "Đăng Ký Sinh Viên":
         if st.button("Đăng Ký") and image_file is not None and name:
             image = Image.open(image_file)
             img_array = np.array(image)
-            embedding = recognizer.get_embedding(img_array)
+            # Giả sử recognizer là một đối tượng đã được định nghĩa trước
+            embedding = recognizer.get_embedding(img_array) if 'recognizer' in globals() else None
             if embedding is not None:
                 # Tạo thư mục lưu hình ảnh nếu chưa có
                 if not os.path.exists('student_images'):
@@ -237,7 +243,6 @@ if page == "Đăng Ký Sinh Viên":
                 conn.commit()
                 conn.close()
                 st.success(f"Đã đăng ký sinh viên {name} thành công!")
-                ids, names, embeddings = load_embeddings()
             else:
                 st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 elif page == "Tạo Buổi Thực Tập":
