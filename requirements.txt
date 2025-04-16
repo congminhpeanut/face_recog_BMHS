@@ -6,5 +6,3 @@ altair
 pillow==10.4.0
 insightface==0.7.3
 onnxruntime
-streamlit-webrtc
-av
