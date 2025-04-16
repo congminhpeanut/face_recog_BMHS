@@ -23,6 +23,42 @@ def init_db():
 
 init_db()
 
+# Kết nối đến cơ sở dữ liệu
+def get_db_connection():
+    conn = sqlite3.connect('attendance.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Lấy danh sách sinh viên từ cơ sở dữ liệu
+def get_students():
+    conn = get_db_connection()
+    students = conn.execute('SELECT id, name, image_path FROM students').fetchall()
+    conn.close()
+    return students
+
+# Trang xem danh sách sinh viên
+def view_students_page():
+    st.header("Danh Sách Sinh Viên Đã Đăng Ký")
+    
+    students = get_students()
+    
+    if not students:
+        st.info("Chưa có sinh viên nào được đăng ký.")
+        return
+    
+    for student in students:
+        st.subheader(f"Sinh viên: {student['name']}")
+        image_path = student['image_path']
+        
+        if os.path.exists(image_path):
+            image = Image.open(image_path)
+            st.image(image, caption=f"Hình ảnh của {student['name']}", use_column_width=True)
+        else:
+            st.error(f"Hình ảnh không tồn tại cho sinh viên {student['name']}.")
+        
+        st.write(f"ID: {student['id']}")
+        st.write("---")
+
 # Lớp nhận diện khuôn mặt
 class FaceRecognizer:
     def __init__(self):
@@ -130,7 +166,7 @@ h1, h2 {
 
 # Ứng dụng Streamlit
 st.title("Ứng Dụng Điểm Danh Sinh Viên")
-page = st.sidebar.selectbox("Chọn chức năng", ["Điểm Danh", "Đăng Ký Sinh Viên"])
+page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Điểm Danh", "Xem Sinh Viên"])
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -216,3 +252,6 @@ elif page == "Xem Điểm Danh":
         else:
             st.write("Không có sinh viên nào được ghi nhận.")
         conn.close()
+
+elif page == "Xem Sinh Viên":
+    view_students_page()
