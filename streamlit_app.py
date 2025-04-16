@@ -7,13 +7,14 @@ from PIL import Image
 import time
 import gc
 from datetime import datetime
+import os
 
 # Khởi tạo cơ sở dữ liệu
 def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS students
-                 (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB)''')
+                 (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, date TEXT, time TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
@@ -50,11 +51,11 @@ def view_students_page():
         st.subheader(f"Sinh viên: {student['name']}")
         image_path = student['image_path']
         
-        if os.path.exists(image_path):
+        if image_path and os.path.exists(image_path):
             image = Image.open(image_path)
             st.image(image, caption=f"Hình ảnh của {student['name']}", use_column_width=True)
         else:
-            st.error(f"Hình ảnh không tồn tại cho sinh viên {student['name']}.")
+            st.warning(f"Không tìm thấy hình ảnh cho sinh viên {student['name']}.")
         
         st.write(f"ID: {student['id']}")
         st.write("---")
@@ -135,7 +136,7 @@ def get_sessions():
     conn.close()
     return sessions
 
-# CSS để làm giao diện chuyên nghiệpового
+# CSS để làm giao diện chuyên nghiệp
 st.markdown("""
 <style>
 body {
@@ -180,9 +181,19 @@ if page == "Đăng Ký Sinh Viên":
             img_array = np.array(image)
             embedding = recognizer.get_embedding(img_array)
             if embedding is not None:
+                # Tạo thư mục lưu hình ảnh nếu chưa có
+                if not os.path.exists('student_images'):
+                    os.makedirs('student_images')
+                
+                # Lưu hình ảnh
+                image_path = f"student_images/{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+                image.save(image_path)
+                
+                # Lưu vào cơ sở dữ liệu
                 conn = sqlite3.connect('attendance.db')
                 c = conn.cursor()
-                c.execute("INSERT INTO students (name, embedding) VALUES (?, ?)", (name, embedding.tobytes()))
+                c.execute("INSERT INTO students (name, embedding, image_path) VALUES (?, ?, ?)", 
+                          (name, embedding.tobytes(), image_path))
                 conn.commit()
                 conn.close()
                 st.success(f"Đã đăng ký sinh viên {name} thành công!")
@@ -232,26 +243,6 @@ elif page == "Điểm Danh":
                     st.error("Không nhận diện được sinh viên trong ảnh.")
             else:
                 st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng chụp hoặc tải lại.")
-            
-elif page == "Xem Điểm Danh":
-    st.header("Xem Danh Sách Điểm Danh")
-    sessions = get_sessions()
-    session_options = [f"Buổi {s[0]} ngày {s[1]} lúc {s[2]}" for s in sessions]
-    selected_session = st.selectbox("Chọn Buổi", session_options)
-    if selected_session:
-        session_id = int(selected_session.split()[1])
-        conn = sqlite3.connect('attendance.db')
-        c = conn.cursor()
-        c.execute("SELECT s.name, a.timestamp FROM students s JOIN attendance a ON s.id = a.student_id WHERE a.session_id = ? AND a.status = 'present'",
-                  (session_id,))
-        present_students = c.fetchall()
-        st.subheader("Danh sách sinh viên có mặt:")
-        if present_students:
-            for student in present_students:
-                st.write(f"- {student[0]} lúc {student[1]}")
-        else:
-            st.write("Không có sinh viên nào được ghi nhận.")
-        conn.close()
 
 elif page == "Xem Sinh Viên":
     view_students_page()
