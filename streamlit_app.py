@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration
 import av
 import cv2
 import numpy as np
@@ -11,11 +11,16 @@ import gc
 from datetime import datetime, timedelta
 import os
 import pytz
+import logging
 
-# Thiết lập múi giờ Việt Nam (UTC+7)
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Set Vietnam timezone (UTC+7)
 tz = pytz.timezone('Asia/Ho_Chi_Minh')
 
-# Khởi tạo cơ sở dữ liệu
+# Initialize database
 def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -30,47 +35,42 @@ def init_db():
 
 init_db()
 
-# Kết nối đến cơ sở dữ liệu
+# Database connection
 def get_db_connection():
     conn = sqlite3.connect('attendance.db')
     conn.row_factory = sqlite3.Row
     return conn
 
-# Lấy danh sách sinh viên từ cơ sở dữ liệu
+# Get student list
 def get_students():
     conn = get_db_connection()
     students = conn.execute('SELECT id, name, image_path FROM students').fetchall()
     conn.close()
     return students
 
-# Trang xem danh sách sinh viên
+# View students page
 def view_students_page():
     st.header("Danh Sách Sinh Viên Đã Đăng Ký")
-    
     students = get_students()
-    
     if not students:
         st.info("Chưa có sinh viên nào được đăng ký.")
         return
-    
     for student in students:
         st.subheader(f"Sinh viên: {student['name']}")
         image_path = student['image_path']
-        
         if image_path and os.path.exists(image_path):
             image = Image.open(image_path)
             st.image(image, caption=f"Hình ảnh của {student['name']}", use_column_width=True)
         else:
             st.warning(f"Không tìm thấy hình ảnh cho sinh viên {student['name']}.")
-        
         st.write(f"ID: {student['id']}")
         st.write("---")
 
-# Lớp nhận diện khuôn mặt
+# Face recognition class
 class FaceRecognizer:
     def __init__(self):
         self.app = insightface.app.FaceAnalysis()
-        self.app.prepare(ctx_id=0)  # Sử dụng CPU
+        self.app.prepare(ctx_id=0)  # Use CPU
 
     def get_embedding(self, image):
         faces = self.app.get(image)
@@ -78,14 +78,14 @@ class FaceRecognizer:
             return faces[0].embedding
         return None
 
-# Cache mô hình để tránh tải lại
+# Cache face recognizer
 @st.cache_resource
 def get_recognizer():
     return FaceRecognizer()
 
 recognizer = get_recognizer()
 
-# Tải embedding của sinh viên
+# Load student embeddings
 def load_embeddings():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -103,7 +103,7 @@ def load_embeddings():
 
 ids, names, embeddings = load_embeddings()
 
-# Tìm sinh viên khớp nhất
+# Find closest match
 def find_closest_match(embedding, ids, names, embeddings, threshold=20.0):
     if not embeddings:
         return None, None
@@ -114,7 +114,7 @@ def find_closest_match(embedding, ids, names, embeddings, threshold=20.0):
         return ids[index], names[index]
     return None, None
 
-# Tạo buổi thực tập
+# Create new session
 def create_new_session(class_name, session_date, session_day, start_time, end_time, max_attendance_score):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -125,19 +125,16 @@ def create_new_session(class_name, session_date, session_day, start_time, end_ti
     conn.close()
     return session_id
 
-# Ghi nhận điểm danh
+# Mark attendance
 def mark_attendance(session_id, student_id, timestamp, attendance_score):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    # Kiểm tra xem sinh viên đã điểm danh trong buổi này chưa
-    c.execute("SELECT COUNT(*) FROM attendance WHERE session_id = ? AND student_id = ?", (session_id, student_id))
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
-                  (session_id, student_id, timestamp, attendance_score))
-        conn.commit()
+    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
+              (session_id, student_id, timestamp, attendance_score))
+    conn.commit()
     conn.close()
 
-# Lấy danh sách buổi thực tập
+# Get sessions
 def get_sessions():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -146,7 +143,7 @@ def get_sessions():
     conn.close()
     return sessions
 
-# Lấy thông tin buổi thực tập
+# Get session info
 def get_session_info(session_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -155,7 +152,7 @@ def get_session_info(session_id):
     conn.close()
     return session
 
-# Lấy danh sách sinh viên đã điểm danh trong buổi thực tập
+# Get attendance list
 def get_attendance_list(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -165,7 +162,7 @@ def get_attendance_list(session_id):
     conn.close()
     return attendance_list
 
-# CSS để làm giao diện chuyên nghiệp
+# CSS styling
 st.markdown("""
 <style>
 body {
@@ -194,7 +191,7 @@ h1, h2 {
 </style>
 """, unsafe_allow_html=True)
 
-# Ứng dụng Streamlit
+# Streamlit app
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
 page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh Realtime", "Xem Sinh Viên", "Xem Điểm Danh"])
 
@@ -210,15 +207,10 @@ if page == "Đăng Ký Sinh Viên":
             img_array = np.array(image)
             embedding = recognizer.get_embedding(img_array)
             if embedding is not None:
-                # Tạo thư mục lưu hình ảnh nếu chưa có
                 if not os.path.exists('student_images'):
                     os.makedirs('student_images')
-                
-                # Lưu hình ảnh
                 image_path = f"student_images/{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
                 image.save(image_path)
-                
-                # Lưu vào cơ sở dữ liệu
                 conn = sqlite3.connect('attendance.db')
                 c = conn.cursor()
                 c.execute("INSERT INTO students (name, embedding, image_path) VALUES (?, ?, ?)", 
@@ -232,36 +224,27 @@ if page == "Đăng Ký Sinh Viên":
 
 elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
-    
-    # Lấy ngày hiện tại theo múi giờ Việt Nam
     today = datetime.now(tz).date()
     today_str = today.strftime("%Y-%m-%d")
-    day_of_week = today.strftime("%A")  # Lấy thứ trong tuần
-    
-    # Sử dụng session state để lưu trữ các giá trị
+    day_of_week = today.strftime("%A")
     if 'start_time' not in st.session_state:
         st.session_state.start_time = datetime.now(tz).time()
     if 'end_time' not in st.session_state:
         st.session_state.end_time = (datetime.now(tz) + timedelta(hours=1)).time()
-    
     class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
     session_date = st.date_input("Ngày thực tập", value=today)
     session_day = st.selectbox("Thứ trong tuần", ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_of_week))
     start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=st.session_state.start_time)
     end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=st.session_state.end_time)
     max_attendance_score = st.number_input("Điểm chuyên cần tối đa (1-10)", min_value=1, max_value=10, value=10)
-    
-    # Cập nhật session state với giá trị mới
     st.session_state.start_time = start_time
     st.session_state.end_time = end_time
-    
     if st.button("Tạo Buổi Thực Tập"):
         session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
         st.success(f"Đã tạo buổi thực tập mới với ID: {session_id}")
 
 elif page == "Điểm Danh Realtime":
     st.header("Điểm Danh Buổi Thực Tập Realtime")
-    
     sessions = get_sessions()
     session_options = [f"Buổi {s[0]} - {s[1]} - {s[2]} ({s[3]})" for s in sessions]
     selected_session = st.selectbox("Chọn Buổi Thực Tập", session_options)
@@ -271,41 +254,55 @@ elif page == "Điểm Danh Realtime":
         session_info = get_session_info(session_id)
         st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
         
-        # Định nghĩa lớp xử lý video
+        # Define video processor
         class VideoProcessor(VideoTransformerBase):
             def __init__(self):
                 self.session_id = session_id
                 self.session_info = session_info
                 self.recognizer = get_recognizer()
                 self.ids, self.names, self.embeddings = load_embeddings()
-                self.attendance_marked = set()  # Theo dõi sinh viên đã điểm danh
+                self.attendance_marked = set()
 
             def transform(self, frame):
-                img = frame.to_ndarray(format="bgr24")
-                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                faces = self.recognizer.app.get(img_rgb)
-                
-                if len(faces) == 1:
-                    embedding = faces[0].embedding
-                    student_id, student_name = find_closest_match(embedding, self.ids, self.names, self.embeddings)
-                    if student_id is not None and student_id not in self.attendance_marked:
-                        now = datetime.now(tz)
-                        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-                        start_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                        end_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                        if start_time <= now <= end_time:
-                            attendance_score = self.session_info['max_attendance_score']
-                        else:
-                            attendance_score = 0
-                        mark_attendance(self.session_id, student_id, timestamp, attendance_score)
-                        self.attendance_marked.add(student_id)
-                        st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
-                return av.VideoFrame.from_ndarray(img, format="bgr24")
+                try:
+                    img = frame.to_ndarray(format="bgr24")
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    faces = self.recognizer.app.get(img_rgb)
+                    if len(faces) == 1:
+                        embedding = faces[0].embedding
+                        student_id, student_name = find_closest_match(embedding, self.ids, self.names, self.embeddings)
+                        if student_id is not None and student_id not in self.attendance_marked:
+                            now = datetime.now(tz)
+                            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+                            start_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                            end_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                            attendance_score = self.session_info['max_attendance_score'] if start_time <= now <= end_time else 0
+                            mark_attendance(self.session_id, student_id, timestamp, attendance_score)
+                            self.attendance_marked.add(student_id)
+                            st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                    return av.VideoFrame.from_ndarray(img, format="bgr24")
+                except Exception as e:
+                    logger.error(f"Error in transform: {e}")
+                    return frame
 
-        # Khởi tạo luồng video
-        webrtc_streamer(key="attendance", video_processor_factory=VideoProcessor)
+        # WebRTC configuration with STUN server
+        rtc_config = RTCConfiguration({
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        })
 
-        # Nút cập nhật danh sách điểm danh
+        # Start WebRTC streamer
+        try:
+            webrtc_streamer(
+                key="attendance",
+                video_processor_factory=VideoProcessor,
+                rtc_configuration=rtc_config,
+                media_stream_constraints={"video": True, "audio": False}
+            )
+        except Exception as e:
+            st.error(f"Không thể khởi động luồng video: {e}")
+            logger.error(f"WebRTC streamer error: {e}")
+
+        # Refresh attendance list
         if st.button("Cập nhật danh sách điểm danh"):
             attendance_list = get_attendance_list(session_id)
             if attendance_list:
@@ -322,14 +319,11 @@ elif page == "Xem Điểm Danh":
     sessions = get_sessions()
     session_options = [f"Buổi {s[0]} - {s[1]} - {s[2]} ({s[3]})" for s in sessions]
     selected_session = st.selectbox("Chọn Buổi Thực Tập", session_options)
-    
     if selected_session:
         session_id = int(selected_session.split()[1])
         session_info = get_session_info(session_id)
         st.subheader(f"Danh sách sinh viên đã điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
-        
         attendance_list = get_attendance_list(session_id)
-        
         if attendance_list:
             for student in attendance_list:
                 st.write(f"- {student[0]} - Giờ có mặt: {student[1]} - Điểm chuyên cần: {student[2]}")
