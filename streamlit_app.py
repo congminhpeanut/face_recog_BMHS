@@ -156,9 +156,17 @@ if page == "Đăng Ký Sinh Viên":
 
 elif page == "Điểm Danh":
     st.header("Điểm Danh Buổi Học")
+    
+    # Nút tạo buổi học mới
+    if st.button("Tạo Buổi Học Mới"):
+        session_id = create_new_session()
+        st.success(f"Đã tạo buổi học mới với ID: {session_id}")
+    
+    # Lấy và hiển thị danh sách buổi học
     sessions = get_sessions()
     session_options = [f"Buổi {s[0]} ngày {s[1]} lúc {s[2]}" for s in sessions]
     selected_session = st.selectbox("Chọn Buổi Học", session_options)
+    
     if selected_session:
         session_id = int(selected_session.split()[1])
         if st.button("Bắt Đầu Điểm Danh"):
