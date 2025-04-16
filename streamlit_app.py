@@ -6,8 +6,12 @@ import insightface
 from PIL import Image
 import time
 import gc
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import pytz
+
+# Thiết lập múi giờ Việt Nam (UTC+7)
+tz = pytz.timezone('Asia/Ho_Chi_Minh')
 
 # Khởi tạo cơ sở dữ liệu
 def init_db():
@@ -16,9 +20,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS students
                  (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
-                 (id INTEGER PRIMARY KEY, date TEXT, time TEXT)''')
+                 (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (session_id INTEGER, student_id INTEGER, status TEXT, timestamp TEXT)''')
+                 (session_id INTEGER, student_id INTEGER, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -98,7 +102,7 @@ def load_embeddings():
 ids, names, embeddings = load_embeddings()
 
 # Tìm sinh viên khớp nhất
-def find_closest_match(embedding, ids, names, embeddings, threshold=20):
+def find_closest_match(embedding, ids, names, embeddings, threshold=1.0):
     if not embeddings:
         return None, None
     distances = [np.linalg.norm(embedding - emb) for emb in embeddings]
@@ -108,33 +112,53 @@ def find_closest_match(embedding, ids, names, embeddings, threshold=20):
         return ids[index], names[index]
     return None, None
 
-# Tạo phiên điểm danh mới
-def create_new_session():
+# Tạo buổi thực tập
+def create_new_session(class_name, session_date, session_day, start_time, end_time, max_attendance_score):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("INSERT INTO sessions (date, time) VALUES (date('now'), time('now'))")
+    c.execute("INSERT INTO sessions (class_name, session_date, session_day, start_time, end_time, max_attendance_score) VALUES (?, ?, ?, ?, ?, ?)",
+              (class_name, session_date, session_day, start_time, end_time, max_attendance_score))
     session_id = c.lastrowid
     conn.commit()
     conn.close()
     return session_id
 
 # Ghi nhận điểm danh
-def mark_attendance(session_id, student_id, timestamp):
+def mark_attendance(session_id, student_id, timestamp, attendance_score):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp) VALUES (?, ?, 'present', ?)",
-              (session_id, student_id, timestamp))
+    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
+              (session_id, student_id, timestamp, attendance_score))
     conn.commit()
     conn.close()
 
-# Lấy danh sách buổi học
+# Lấy danh sách buổi thực tập
 def get_sessions():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("SELECT id, date, time FROM sessions")
+    c.execute("SELECT id, class_name, session_date, session_day, start_time, end_time, max_attendance_score FROM sessions")
     sessions = c.fetchall()
     conn.close()
     return sessions
+
+# Lấy thông tin buổi thực tập
+def get_session_info(session_id):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
+    session = c.fetchone()
+    conn.close()
+    return session
+
+# Lấy danh sách sinh viên đã điểm danh trong buổi thực tập
+def get_attendance_list(session_id):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT s.name, a.timestamp, a.attendance_score FROM students s JOIN attendance a ON s.id = a.student_id WHERE a.session_id = ? AND a.status = 'present'",
+              (session_id,))
+    attendance_list = c.fetchall()
+    conn.close()
+    return attendance_list
 
 # CSS để làm giao diện chuyên nghiệp
 st.markdown("""
@@ -166,8 +190,8 @@ h1, h2 {
 """, unsafe_allow_html=True)
 
 # Ứng dụng Streamlit
-st.title("Ứng Dụng Điểm Danh Sinh Viên")
-page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Điểm Danh", "Xem Sinh Viên"])
+st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
+page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"])
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -186,7 +210,7 @@ if page == "Đăng Ký Sinh Viên":
                     os.makedirs('student_images')
                 
                 # Lưu hình ảnh
-                image_path = f"student_images/{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+                image_path = f"student_images/{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
                 image.save(image_path)
                 
                 # Lưu vào cơ sở dữ liệu
@@ -201,32 +225,41 @@ if page == "Đăng Ký Sinh Viên":
             else:
                 st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 
+elif page == "Tạo Buổi Thực Tập":
+    st.header("Tạo Buổi Thực Tập Mới")
+    
+    # Lấy ngày hiện tại theo múi giờ Việt Nam
+    today = datetime.now(tz).date()
+    today_str = today.strftime("%Y-%m-%d")
+    day_of_week = today.strftime("%A")  # Lấy thứ trong tuần
+    
+    class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
+    session_date = st.date_input("Ngày thực tập", value=today)
+    session_day = st.selectbox("Thứ trong tuần", ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_of_week))
+    start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=datetime.now(tz).time())
+    end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=(datetime.now(tz) + timedelta(hours=1)).time())
+    max_attendance_score = st.number_input("Điểm chuyên cần tối đa (1-10)", min_value=1, max_value=10, value=10)
+    
+    if st.button("Tạo Buổi Thực Tập"):
+        session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
+        st.success(f"Đã tạo buổi thực tập mới với ID: {session_id}")
+
 elif page == "Điểm Danh":
-    st.header("Điểm Danh Buổi Học")
+    st.header("Điểm Danh Buổi Thực Tập")
     
-    # Nút tạo buổi học mới
-    if st.button("Tạo Buổi Học Mới"):
-        session_id = create_new_session()
-        st.success(f"Đã tạo buổi học mới với ID: {session_id}")
-    
-    # Lấy và hiển thị danh sách buổi học
     sessions = get_sessions()
-    session_options = [f"Buổi {s[0]} ngày {s[1]} lúc {s[2]}" for s in sessions]
-    selected_session = st.selectbox("Chọn Buổi Học", session_options)
+    session_options = [f"Buổi {s[0]} - {s[1]} - {s[2]} ({s[3]})" for s in sessions]
+    selected_session = st.selectbox("Chọn Buổi Thực Tập", session_options)
     
     if selected_session:
         session_id = int(selected_session.split()[1])
-        st.subheader("Chụp hoặc tải ảnh để điểm danh")
+        session_info = get_session_info(session_id)
+        st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
         
-        # Widget để chụp ảnh hoặc tải lên ảnh
-        image_file = st.camera_input("Chụp ảnh để điểm danh")  # Cho phép chụp ảnh
-        
-        # Tùy chọn tải lên ảnh nếu không muốn dùng camera
+        image_file = st.camera_input("Chụp ảnh để điểm danh")
         uploaded_file = st.file_uploader("Hoặc tải lên ảnh để điểm danh", type=["jpg", "png", "jpeg"])
         
-        # Xử lý ảnh từ camera hoặc file tải lên
         if image_file is not None or uploaded_file is not None:
-            # Ưu tiên ảnh từ camera nếu có, nếu không thì dùng ảnh tải lên
             file_to_process = image_file if image_file is not None else uploaded_file
             image = Image.open(file_to_process)
             img_array = np.array(image)
@@ -236,9 +269,37 @@ elif page == "Điểm Danh":
                 embedding = faces[0].embedding
                 student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
                 if student_id is not None:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    mark_attendance(session_id, student_id, timestamp)
-                    st.success(f"Đã điểm danh: {student_name} lúc {timestamp}")
+                    # Lấy thời gian hiện tại theo múi giờ Việt Nam
+                    now = datetime.now(tz)
+                    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Lấy khung giờ đánh giá
+                    start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                    end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                    
+                    # Tính điểm chuyên cần
+                    if start_time <= now <= end_time:
+                        attendance_score = session_info['max_attendance_score']
+                    else:
+                        attendance_score = 0
+                    
+                    # Lưu điểm danh
+                    mark_attendance(session_id, student_id, timestamp, attendance_score)
+                    
+                    # Hiển thị thông tin sinh viên và hình ảnh gốc
+                    conn = sqlite3.connect('attendance.db')
+                    c = conn.cursor()
+                    c.execute("SELECT image_path FROM students WHERE id = ?", (student_id,))
+                    image_path = c.fetchone()[0]
+                    conn.close()
+                    
+                    if image_path and os.path.exists(image_path):
+                        image = Image.open(image_path)
+                        st.image(image, caption=f"Hình ảnh gốc của {student_name}", width=150)
+                    else:
+                        st.warning(f"Không tìm thấy hình ảnh gốc cho sinh viên {student_name}.")
+                    
+                    st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
                 else:
                     st.error("Không nhận diện được sinh viên trong ảnh.")
             else:
@@ -246,3 +307,22 @@ elif page == "Điểm Danh":
 
 elif page == "Xem Sinh Viên":
     view_students_page()
+
+elif page == "Xem Điểm Danh":
+    st.header("Xem Danh Sách Điểm Danh")
+    sessions = get_sessions()
+    session_options = [f"Buổi {s[0]} - {s[1]} - {s[2]} ({s[3]})" for s in sessions]
+    selected_session = st.selectbox("Chọn Buổi Thực Tập", session_options)
+    
+    if selected_session:
+        session_id = int(selected_session.split()[1])
+        session_info = get_session_info(session_id)
+        st.subheader(f"Danh sách sinh viên đã điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
+        
+        attendance_list = get_attendance_list(session_id)
+        
+        if attendance_list:
+            for student in attendance_list:
+                st.write(f"- {student[0]} - Giờ có mặt: {student[1]} - Điểm chuyên cần: {student[2]}")
+        else:
+            st.write("Không có sinh viên nào được ghi nhận.")
