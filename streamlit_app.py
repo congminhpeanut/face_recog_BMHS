@@ -233,12 +233,22 @@ elif page == "Tạo Buổi Thực Tập":
     today_str = today.strftime("%Y-%m-%d")
     day_of_week = today.strftime("%A")  # Lấy thứ trong tuần
     
+    # Sử dụng session state để lưu trữ các giá trị
+    if 'start_time' not in st.session_state:
+        st.session_state.start_time = datetime.now(tz).time()
+    if 'end_time' not in st.session_state:
+        st.session_state.end_time = (datetime.now(tz) + timedelta(hours=1)).time()
+    
     class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
     session_date = st.date_input("Ngày thực tập", value=today)
     session_day = st.selectbox("Thứ trong tuần", ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_of_week))
-    start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=datetime.now(tz).time())
-    end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=(datetime.now(tz) + timedelta(hours=1)).time())
+    start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=st.session_state.start_time)
+    end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=st.session_state.end_time)
     max_attendance_score = st.number_input("Điểm chuyên cần tối đa (1-10)", min_value=1, max_value=10, value=10)
+    
+    # Cập nhật session state với giá trị mới
+    st.session_state.start_time = start_time
+    st.session_state.end_time = end_time
     
     if st.button("Tạo Buổi Thực Tập"):
         session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
