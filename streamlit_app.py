@@ -171,7 +171,7 @@ elif page == "Điểm Danh":
         session_id = int(selected_session.split()[1])
         if st.button("Bắt Đầu Điểm Danh"):
             st.info("Đang điểm danh... Nhấn 'Dừng Điểm Danh' để kết thúc.")
-            cap = cv2.VideoCapture(0)  # Thay index 1 thành 0
+            cap = cv2.VideoCapture(-1)  # Thay index 1 thành 0
             if not cap.isOpened():
                 st.error("Không thể mở camera. Vui lòng kiểm tra kết nối hoặc index camera.")
                 st.stop()
