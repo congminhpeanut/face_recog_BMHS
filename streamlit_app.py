@@ -191,7 +191,7 @@ h1, h2 {
 
 # Ứng dụng Streamlit
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
-page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"])
+page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh Realtime", "Xem Sinh Viên", "Xem Điểm Danh"])
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -254,8 +254,8 @@ elif page == "Tạo Buổi Thực Tập":
         session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
         st.success(f"Đã tạo buổi thực tập mới với ID: {session_id}")
 
-elif page == "Điểm Danh":
-    st.header("Điểm Danh Buổi Thực Tập")
+elif page == "Điểm Danh Realtime":
+    st.header("Điểm Danh Buổi Thực Tập Realtime")
     
     sessions = get_sessions()
     session_options = [f"Buổi {s[0]} - {s[1]} - {s[2]} ({s[3]})" for s in sessions]
@@ -266,54 +266,64 @@ elif page == "Điểm Danh":
         session_info = get_session_info(session_id)
         st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
         
-        image_file = st.camera_input("Chụp ảnh để điểm danh")
-        uploaded_file = st.file_uploader("Hoặc tải lên ảnh để điểm danh", type=["jpg", "png", "jpeg"])
-        
-        if image_file is not None or uploaded_file is not None:
-            file_to_process = image_file if image_file is not None else uploaded_file
-            image = Image.open(file_to_process)
-            img_array = np.array(image)
-            faces = recognizer.app.get(img_array)
+        # Khởi tạo camera
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            st.error("Không thể mở camera. Vui lòng kiểm tra thiết bị của bạn.")
+        else:
+            # Tạo placeholder để hiển thị hình ảnh và thông tin điểm danh
+            frame_placeholder = st.empty()
+            attendance_placeholder = st.empty()
             
-            if len(faces) == 1:
-                embedding = faces[0].embedding
-                student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
-                if student_id is not None:
-                    # Lấy thời gian hiện tại theo múi giờ Việt Nam
-                    now = datetime.now(tz)
-                    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    # Lấy khung giờ đánh giá
-                    start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                    end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                    
-                    # Tính điểm chuyên cần
-                    if start_time <= now <= end_time:
-                        attendance_score = session_info['max_attendance_score']
+            # Nút dừng để thoát vòng lặp
+            stop_button = st.button("Dừng Điểm Danh")
+            
+            while not stop_button:
+                ret, frame = cap.read()
+                if not ret:
+                    st.error("Không thể nhận hình ảnh từ camera.")
+                    break
+                
+                # Chuyển đổi màu từ BGR sang RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Nhận diện khuôn mặt
+                faces = recognizer.app.get(frame_rgb)
+                
+                if len(faces) == 1:
+                    embedding = faces[0].embedding
+                    student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
+                    if student_id is not None:
+                        # Lấy thời gian hiện tại theo múi giờ Việt Nam
+                        now = datetime.now(tz)
+                        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # Lấy khung giờ đánh giá
+                        start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                        end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                        
+                        # Tính điểm chuyên cần
+                        if start_time <= now <= end_time:
+                            attendance_score = session_info['max_attendance_score']
+                        else:
+                            attendance_score = 0
+                        
+                        # Lưu điểm danh
+                        mark_attendance(session_id, student_id, timestamp, attendance_score)
+                        attendance_placeholder.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
                     else:
-                        attendance_score = 0
-                    
-                    # Lưu điểm danh
-                    mark_attendance(session_id, student_id, timestamp, attendance_score)
-                    
-                    # Hiển thị thông tin sinh viên và hình ảnh gốc
-                    conn = sqlite3.connect('attendance.db')
-                    c = conn.cursor()
-                    c.execute("SELECT image_path FROM students WHERE id = ?", (student_id,))
-                    image_path = c.fetchone()[0]
-                    conn.close()
-                    
-                    if image_path and os.path.exists(image_path):
-                        image = Image.open(image_path)
-                        st.image(image, caption=f"Hình ảnh gốc của {student_name}", width=150)
-                    else:
-                        st.warning(f"Không tìm thấy hình ảnh gốc cho sinh viên {student_name}.")
-                    
-                    st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                        attendance_placeholder.error("Không nhận diện được sinh viên trong ảnh.")
                 else:
-                    st.error("Không nhận diện được sinh viên trong ảnh.")
-            else:
-                st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng chụp hoặc tải lại.")
+                    attendance_placeholder.error("Ảnh không chứa đúng một khuôn mặt.")
+                
+                # Hiển thị khung hình
+                frame_placeholder.image(frame_rgb, channels="RGB")
+                
+                # Giảm tải CPU
+                time.sleep(0.1)
+            
+            # Giải phóng camera khi dừng
+            cap.release()
 
 elif page == "Xem Sinh Viên":
     view_students_page()
