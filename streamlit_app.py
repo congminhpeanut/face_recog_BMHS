@@ -143,7 +143,7 @@ def get_sessions():
 
 # Lấy thông tin buổi thực tập
 def get_session_info(session_id):
-    conn = sqlite3.connect('attendance.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
     session = c.fetchone()
