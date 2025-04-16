@@ -1,4 +1,6 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import av
 import cv2
 import numpy as np
 import sqlite3
@@ -127,9 +129,12 @@ def create_new_session(class_name, session_date, session_day, start_time, end_ti
 def mark_attendance(session_id, student_id, timestamp, attendance_score):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
-              (session_id, student_id, timestamp, attendance_score))
-    conn.commit()
+    # Kiểm tra xem sinh viên đã điểm danh trong buổi này chưa
+    c.execute("SELECT COUNT(*) FROM attendance WHERE session_id = ? AND student_id = ?", (session_id, student_id))
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
+                  (session_id, student_id, timestamp, attendance_score))
+        conn.commit()
     conn.close()
 
 # Lấy danh sách buổi thực tập
@@ -266,64 +271,48 @@ elif page == "Điểm Danh Realtime":
         session_info = get_session_info(session_id)
         st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
         
-        # Khởi tạo camera
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            st.error("Không thể mở camera. Vui lòng kiểm tra thiết bị của bạn.")
-        else:
-            # Tạo placeholder để hiển thị hình ảnh và thông tin điểm danh
-            frame_placeholder = st.empty()
-            attendance_placeholder = st.empty()
-            
-            # Nút dừng để thoát vòng lặp
-            stop_button = st.button("Dừng Điểm Danh")
-            
-            while not stop_button:
-                ret, frame = cap.read()
-                if not ret:
-                    st.error("Không thể nhận hình ảnh từ camera.")
-                    break
-                
-                # Chuyển đổi màu từ BGR sang RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # Nhận diện khuôn mặt
-                faces = recognizer.app.get(frame_rgb)
+        # Định nghĩa lớp xử lý video
+        class VideoProcessor(VideoTransformerBase):
+            def __init__(self):
+                self.session_id = session_id
+                self.session_info = session_info
+                self.recognizer = get_recognizer()
+                self.ids, self.names, self.embeddings = load_embeddings()
+                self.attendance_marked = set()  # Theo dõi sinh viên đã điểm danh
+
+            def transform(self, frame):
+                img = frame.to_ndarray(format="bgr24")
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                faces = self.recognizer.app.get(img_rgb)
                 
                 if len(faces) == 1:
                     embedding = faces[0].embedding
-                    student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
-                    if student_id is not None:
-                        # Lấy thời gian hiện tại theo múi giờ Việt Nam
+                    student_id, student_name = find_closest_match(embedding, self.ids, self.names, self.embeddings)
+                    if student_id is not None and student_id not in self.attendance_marked:
                         now = datetime.now(tz)
                         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        # Lấy khung giờ đánh giá
-                        start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                        end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                        
-                        # Tính điểm chuyên cần
+                        start_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                        end_time = datetime.strptime(f"{self.session_info['session_date']} {self.session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                         if start_time <= now <= end_time:
-                            attendance_score = session_info['max_attendance_score']
+                            attendance_score = self.session_info['max_attendance_score']
                         else:
                             attendance_score = 0
-                        
-                        # Lưu điểm danh
-                        mark_attendance(session_id, student_id, timestamp, attendance_score)
-                        attendance_placeholder.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
-                    else:
-                        attendance_placeholder.error("Không nhận diện được sinh viên trong ảnh.")
-                else:
-                    attendance_placeholder.error("Ảnh không chứa đúng một khuôn mặt.")
-                
-                # Hiển thị khung hình
-                frame_placeholder.image(frame_rgb, channels="RGB")
-                
-                # Giảm tải CPU
-                time.sleep(0.1)
-            
-            # Giải phóng camera khi dừng
-            cap.release()
+                        mark_attendance(self.session_id, student_id, timestamp, attendance_score)
+                        self.attendance_marked.add(student_id)
+                        st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+        # Khởi tạo luồng video
+        webrtc_streamer(key="attendance", video_processor_factory=VideoProcessor)
+
+        # Nút cập nhật danh sách điểm danh
+        if st.button("Cập nhật danh sách điểm danh"):
+            attendance_list = get_attendance_list(session_id)
+            if attendance_list:
+                for student in attendance_list:
+                    st.write(f"- {student[0]} - Giờ có mặt: {student[1]} - Điểm chuyên cần: {student[2]}")
+            else:
+                st.write("Không có sinh viên nào được ghi nhận.")
 
 elif page == "Xem Sinh Viên":
     view_students_page()
