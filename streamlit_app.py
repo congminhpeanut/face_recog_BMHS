@@ -174,7 +174,7 @@ elif page == "Điểm Danh":
             cap = cv2.VideoCapture(0)  # Thay index 1 thành 0
             if not cap.isOpened():
                 st.error("Không thể mở camera. Vui lòng kiểm tra kết nối hoặc index camera.")
-                return
+                st.stop()
             recognized_students = set()
             placeholder = st.empty()
             stop_button = st.button("Dừng Điểm Danh")
