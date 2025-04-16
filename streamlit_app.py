@@ -102,7 +102,7 @@ def load_embeddings():
 ids, names, embeddings = load_embeddings()
 
 # Tìm sinh viên khớp nhất
-def find_closest_match(embedding, ids, names, embeddings, threshold=1.0):
+def find_closest_match(embedding, ids, names, embeddings, threshold=20.0):
     if not embeddings:
         return None, None
     distances = [np.linalg.norm(embedding - emb) for emb in embeddings]
