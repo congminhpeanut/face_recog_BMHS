@@ -20,11 +20,11 @@ def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS students
-                 (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
+                 (id TEXT PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (session_id INTEGER, student_id INTEGER, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
+                 (session_id INTEGER, student_id TEXT, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -36,10 +36,10 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Lấy danh sách sinh viên từ cơ sở dữ liệu
-def get_students():
+# Lấy danh sách sinh viên theo session_id
+def get_students_by_session(session_id):
     conn = get_db_connection()
-    students = conn.execute('SELECT id, name, image_path, session_id FROM students').fetchall()
+    students = conn.execute('SELECT id, name, image_path, session_id FROM students WHERE session_id = ?', (session_id,)).fetchall()
     conn.close()
     return students
 
@@ -54,10 +54,22 @@ def get_sessions_list():
 def view_students_page():
     st.header("Danh Sách Sinh Viên Đã Đăng Ký")
     
-    students = get_students()
+    sessions = get_sessions_list()
+    if not sessions:
+        st.info("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
+        if st.button("Tạo Buổi Thực Tập"):
+            st.session_state.page = "Tạo Buổi Thực Tập"
+            st.experimental_rerun()
+        return
+    
+    session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
+    selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
+    session_id = sessions[session_options.index(selected_session)]['id']
+    
+    students = get_students_by_session(session_id)
     
     if not students:
-        st.info("Chưa có sinh viên nào được đăng ký.")
+        st.info("Chưa có sinh viên nào được đăng ký cho khối thực tập này.")
         return
     
     df = pd.DataFrame(students, columns=['id', 'name', 'image_path', 'session_id'])
@@ -113,11 +125,11 @@ def get_recognizer():
 
 recognizer = get_recognizer()
 
-# Tải embedding của sinh viên
-def load_embeddings():
+# Tải embedding của sinh viên theo session_id
+def load_embeddings_by_session(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("SELECT id, name, embedding FROM students")
+    c.execute("SELECT id, name, embedding FROM students WHERE session_id = ?", (session_id,))
     students = c.fetchall()
     conn.close()
     embeddings = []
@@ -128,8 +140,6 @@ def load_embeddings():
         names.append(student[1])
         embeddings.append(np.frombuffer(student[2], dtype=np.float32))
     return ids, names, embeddings
-
-ids, names, embeddings = load_embeddings()
 
 # Tìm sinh viên khớp nhất
 def find_closest_match(embedding, ids, names, embeddings, threshold=20.0):
@@ -231,7 +241,9 @@ h1, h2 {
 
 # Ứng dụng Streamlit
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
-page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"])
+if 'page' not in st.session_state:
+    st.session_state.page = "Đăng Ký Sinh Viên"
+page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"], key='page')
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -239,7 +251,9 @@ if page == "Đăng Ký Sinh Viên":
     sessions = get_sessions_list()
     if not sessions:
         st.warning("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
-        st.markdown("[Tạo Buổi Thực Tập](#tạo-buổi-thực-tập)")
+        if st.button("Tạo Buổi Thực Tập"):
+            st.session_state.page = "Tạo Buổi Thực Tập"
+            st.experimental_rerun()
     else:
         session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
         selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
@@ -254,10 +268,13 @@ if page == "Đăng Ký Sinh Viên":
                 df = pd.read_excel(excel_file)
                 st.write("Danh sách sinh viên từ file Excel:")
                 st.dataframe(df)
-                student_names = df['Họ tên SV'].tolist()
-                name = st.selectbox("Chọn sinh viên để đăng ký", student_names)
+                student_options = df['Họ tên SV'].tolist()
+                selected_student = st.selectbox("Chọn sinh viên để đăng ký", student_options)
+                student_id = df[df['Họ tên SV'] == selected_student]['MSSV'].values[0]
+                name = selected_student
             else:
                 name = st.text_input("Tên Sinh Viên")
+                student_id = None  # Sẽ được gán sau
             
             if st.button("Đăng Ký") and image_file is not None and name:
                 image = Image.open(image_file)
@@ -270,12 +287,15 @@ if page == "Đăng Ký Sinh Viên":
                     image.save(image_path)
                     conn = sqlite3.connect('attendance.db')
                     c = conn.cursor()
-                    c.execute("INSERT INTO students (name, embedding, image_path, session_id) VALUES (?, ?, ?, ?)", 
-                              (name, embedding.tobytes(), image_path, session_id))
+                    if student_id is None:
+                        c.execute("SELECT MAX(CAST(id AS INTEGER)) FROM students WHERE id GLOB '[0-9]*'")
+                        max_id = c.fetchone()[0]
+                        student_id = str(max_id + 1) if max_id is not None else "1"
+                    c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)", 
+                              (student_id, name, embedding.tobytes(), image_path, session_id))
                     conn.commit()
                     conn.close()
-                    st.success(f"Đã đăng ký sinh viên {name} thành công!")
-                    ids, names, embeddings = load_embeddings()
+                    st.success(f"Đã đăng ký sinh viên {name} với ID {student_id} thành công!")
                 else:
                     st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 
@@ -283,7 +303,6 @@ elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
     today = datetime.now(tz).date()
     today_str = today.strftime("%Y-%m-%d")
-    day_of_week = today.strftime("%A")
     
     if 'start_time' not in st.session_state:
         st.session_state.start_time = datetime.now(tz).time()
@@ -292,7 +311,8 @@ elif page == "Tạo Buổi Thực Tập":
     
     class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
     session_date = st.date_input("Ngày thực tập", value=today)
-    session_day = st.selectbox("Thứ trong tuần", ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"], index=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].index(day_of_week))
+    session_day = session_date.strftime("%A")
+    st.write(f"Thứ trong tuần: {session_day}")
     start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=st.session_state.start_time)
     end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=st.session_state.end_time)
     max_attendance_score = st.number_input("Điểm chuyên cần tối đa (1-10)", min_value=1, max_value=10, value=10)
@@ -316,6 +336,8 @@ elif page == "Điểm Danh":
         session_id = int(selected_session.split()[1])
         session_info = get_session_info(session_id)
         st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
+        
+        ids, names, embeddings = load_embeddings_by_session(session_id)
         
         image_file = st.camera_input("Chụp ảnh để điểm danh")
         uploaded_file = st.file_uploader("Hoặc tải lên ảnh để điểm danh", type=["jpg", "png", "jpeg"])
