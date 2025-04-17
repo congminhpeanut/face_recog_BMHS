@@ -23,6 +23,7 @@ def init_db():
                  (id TEXT PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
+                 
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
                  (session_id INTEGER, student_id TEXT, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
     conn.commit()
@@ -58,8 +59,7 @@ def view_students_page():
     if not sessions:
         st.info("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
         if st.button("Tạo Buổi Thực Tập"):
-            st.session_state.page = "Tạo Buổi Thực Tập"
-            st.experimental_rerun()
+            st.session_state['navigate_to'] = "Tạo Buổi Thực Tập"
         return
     
     session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
@@ -241,9 +241,18 @@ h1, h2 {
 
 # Ứng dụng Streamlit
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
-if 'page' not in st.session_state:
-    st.session_state.page = "Đăng Ký Sinh Viên"
+
+# Initialize session state for navigation
+if 'navigate_to' not in st.session_state:
+    st.session_state['navigate_to'] = None
+
+# Sidebar navigation
 page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"], key='page')
+
+# Handle navigation from button click
+if st.session_state['navigate_to']:
+    page = st.session_state['navigate_to']
+    st.session_state['navigate_to'] = None  # Reset navigation
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -252,7 +261,7 @@ if page == "Đăng Ký Sinh Viên":
     if not sessions:
         st.warning("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
         if st.button("Tạo Buổi Thực Tập"):
-            st.session_state.page = "Tạo Buổi Thực Tập"
+            st.session_state['navigate_to'] = "Tạo Buổi Thực Tập"
             st.experimental_rerun()
     else:
         session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
