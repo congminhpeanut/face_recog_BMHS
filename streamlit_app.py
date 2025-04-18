@@ -23,7 +23,6 @@ def init_db():
                  (id TEXT PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
-                 
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
                  (session_id INTEGER, student_id TEXT, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
     conn.commit()
@@ -91,7 +90,7 @@ def view_students_page():
         conn.commit()
         conn.close()
         st.success(f"Đã xóa sinh viên {selected_student['name']}.")
-        st.experimental_rerun()
+        st.rerun()  # Thay thế st.experimental_rerun()
     
     if st.button("Tải về Danh Sách Sinh Viên (Excel)"):
         df_to_export = df[['id', 'name']]
@@ -262,7 +261,7 @@ if page == "Đăng Ký Sinh Viên":
         st.warning("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
         if st.button("Tạo Buổi Thực Tập"):
             st.session_state['navigate_to'] = "Tạo Buổi Thực Tập"
-            st.experimental_rerun()
+            st.rerun()  # Thay thế st.experimental_rerun()
     else:
         session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
         selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
@@ -395,34 +394,4 @@ elif page == "Xem Điểm Danh":
     if selected_session:
         session_id = int(selected_session.split()[1])
         session_info = get_session_info(session_id)
-        st.subheader(f"Danh sách sinh viên đã điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
-        
-        attendance_list = get_attendance_list(session_id)
-        
-        if attendance_list:
-            df = pd.DataFrame(attendance_list, columns=['MSSV', 'Họ tên SV', 'Giờ điểm danh', 'Điểm', 'Khối thực tập', 'Ngày', 'Thứ', 'Giờ bắt đầu', 'Giờ kết thúc'])
-            st.dataframe(df)
-            
-            if st.button("Tải về Danh Sách Điểm Danh (Excel)"):
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Điểm Danh')
-                excel_data = output.getvalue()
-                st.download_button(
-                    label="Tải về file Excel",
-                    data=excel_data,
-                    file_name="danh_sach_diem_danh.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            
-            st.subheader("Xóa Record Điểm Danh")
-            selected_student_id = st.selectbox("Chọn MSSV để xóa", df['MSSV'])
-            if st.button("Xóa Record Này"):
-                conn = get_db_connection()
-                conn.execute("DELETE FROM attendance WHERE session_id = ? AND student_id = ?", (session_id, selected_student_id))
-                conn.commit()
-                conn.close()
-                st.success(f"Đã xóa record điểm danh của sinh viên {selected_student_id}.")
-                st.experimental_rerun()
-        else:
-            st.write("Không có sinh viên nào được ghi nhận.")
+        st.subheader(f"D
