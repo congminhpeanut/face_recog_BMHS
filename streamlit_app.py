@@ -93,6 +93,15 @@ def view_students_page():
     if image_path and os.path.exists(image_path):
         image = Image.open(image_path)
         st.image(image, caption=f"Hình ảnh của {selected_student['name']} (MSSV: {selected_student['id']})", use_container_width=True)
+        
+        # Thêm nút tải ảnh
+        with open(image_path, "rb") as file:
+            btn = st.download_button(
+                label="Tải ảnh về máy",
+                data=file,
+                file_name=f"{selected_student['id']}_{selected_student['name']}.jpg",
+                mime="image/jpeg"
+            )
     else:
         st.warning(f"Không tìm thấy hình ảnh cho bản ghi {selected_record_id}.")
     
@@ -362,9 +371,19 @@ if page == "Đăng Ký Sinh Viên":
         selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
         session_id = sessions[session_options.index(selected_session)]['id']
         
+        # Thêm tùy chọn cho phương thức đăng ký ảnh
+        registration_method = st.radio("Chọn phương thức đăng ký ảnh", ["Chụp ảnh từ camera", "Tải lên ảnh từ máy tính"])
+        
+        if registration_method == "Chụp ảnh từ camera":
+            image_file = st.camera_input("Chụp ảnh sinh viên")
+        else:
+            image_file = st.file_uploader("Tải lên ảnh sinh viên", type=["jpg", "png", "jpeg"])
+        
         col1, col2 = st.columns([2, 1])
         with col1:
-            image_file = st.camera_input("Chụp ảnh sinh viên")
+            if image_file is not None:
+                image = Image.open(image_file)
+                st.image(image, caption="Ảnh đã chọn", use_container_width=True)
         with col2:
             excel_file = st.file_uploader("Upload file Excel danh sách sinh viên", type=["xlsx", "xls"])
             if excel_file is not None:
@@ -400,7 +419,7 @@ if page == "Đăng Ký Sinh Viên":
                         conn.close()
                         st.success(f"Đã đăng ký hình ảnh cho sinh viên {name} với MSSV {student_id} thành công!")
                     else:
-                        st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
+                        st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chọn ảnh khác với chỉ một khuôn mặt.")
 
 elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
