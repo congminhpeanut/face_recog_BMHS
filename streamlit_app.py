@@ -144,12 +144,51 @@ def load_embeddings_by_session(session_id):
 def find_closest_match(embedding, record_ids, ids, names, embeddings, threshold=20.0):
     if not embeddings:
         return None, None, None
-    distances = [np.linalg.norm(embedding - emb) for emb in embeddings]
-    min_distance = min(distances)
-    if min_distance < threshold:
-        index = distances.index(min_distance)
-        return record_ids[index], ids[index], names[index]
+    # Tạo dictionary để nhóm embeddings theo sinh viên
+    student_embeddings = {}
+    for record_id, student_id, name, emb in zip(record_ids, ids, names, embeddings):
+        if student_id not in student_embeddings:
+            student_embeddings[student_id] = []
+        student_embeddings[student_id].append((record_id, emb))
+    
+    # Tính khoảng cách nhỏ nhất cho mỗi sinh viên
+    min_distances = {}
+    for student_id, emb_list in student_embeddings.items():
+        distances = [np.linalg.norm(embedding - emb[1]) for emb in emb_list]
+        min_distance = min(distances)
+        min_distances[student_id] = min_distance
+    
+    # Tìm sinh viên có khoảng cách nhỏ nhất
+    if min_distances:
+        closest_student_id = min(min_distances, key=min_distances.get)
+        min_distance = min_distances[closest_student_id]
+        if min_distance < threshold:
+            # Lấy record_id của embedding gần nhất cho sinh viên này
+            emb_list = student_embeddings[closest_student_id]
+            distances = [np.linalg.norm(embedding - emb[1]) for emb in emb_list]
+            index = distances.index(min_distance)
+            record_id = emb_list[index][0]
+            name = names[record_ids.index(record_id)]
+            return record_id, closest_student_id, name
     return None, None, None
+
+# Kiểm tra xem sinh viên đã được điểm danh trong buổi thực tập chưa
+def check_attendance(session_id, student_id):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM attendance WHERE session_id = ? AND student_id = ?", (session_id, student_id))
+    result = c.fetchone()
+    conn.close()
+    return result is not None
+
+# Ghi nhận điểm danh
+def mark_attendance(session_id, student_id, timestamp, attendance_score):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
+              (session_id, student_id, timestamp, attendance_score))
+    conn.commit()
+    conn.close()
 
 # Tạo buổi thực tập
 def create_new_session(class_name, session_date, session_day, start_time, end_time, max_attendance_score):
@@ -166,15 +205,6 @@ def create_new_session(class_name, session_date, session_day, start_time, end_ti
     conn.commit()
     conn.close()
     return session_id
-
-# Ghi nhận điểm danh
-def mark_attendance(session_id, student_id, timestamp, attendance_score):
-    conn = sqlite3.connect('attendance.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
-              (session_id, student_id, timestamp, attendance_score))
-    conn.commit()
-    conn.close()
 
 # Lấy danh sách buổi thực tập
 def get_sessions():
@@ -368,23 +398,27 @@ elif page == "Điểm Danh":
                 embedding = faces[0].embedding
                 record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
                 if record_id is not None:
-                    now = datetime.now(tz)
-                    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-                    start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                    end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                    attendance_score = session_info['max_attendance_score'] if start_time <= now <= end_time else 0
-                    mark_attendance(session_id, student_id, timestamp, attendance_score)
-                    conn = sqlite3.connect('attendance.db')
-                    c = conn.cursor()
-                    c.execute("SELECT image_path FROM students WHERE record_id = ?", (record_id,))
-                    image_path = c.fetchone()[0]
-                    conn.close()
-                    if image_path and os.path.exists(image_path):
-                        image = Image.open(image_path)
-                        st.image(image, caption=f"Hình ảnh gốc của {student_name} (MSSV: {student_id})", width=150)
+                    # Kiểm tra xem sinh viên đã được điểm danh chưa
+                    if not check_attendance(session_id, student_id):
+                        now = datetime.now(tz)
+                        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+                        start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                        end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                        attendance_score = session_info['max_attendance_score'] if start_time <= now <= end_time else 0
+                        mark_attendance(session_id, student_id, timestamp, attendance_score)
+                        conn = sqlite3.connect('attendance.db')
+                        c = conn.cursor()
+                        c.execute("SELECT image_path FROM students WHERE record_id = ?", (record_id,))
+                        image_path = c.fetchone()[0]
+                        conn.close()
+                        if image_path and os.path.exists(image_path):
+                            image = Image.open(image_path)
+                            st.image(image, caption=f"Hình ảnh gốc của {student_name} (MSSV: {student_id})", width=150)
+                        else:
+                            st.warning(f"Không tìm thấy hình ảnh gốc cho bản ghi {record_id}.")
+                        st.success(f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
                     else:
-                        st.warning(f"Không tìm thấy hình ảnh gốc cho bản ghi {record_id}.")
-                    st.success(f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                        st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
                 else:
                     st.error("Không nhận diện được sinh viên trong ảnh.")
             else:
