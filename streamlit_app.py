@@ -50,6 +50,18 @@ def get_sessions_list():
     conn.close()
     return sessions
 
+# Lấy tên sinh viên theo student_id
+def get_student_name(student_id):
+    conn = sqlite3.connect('attendance.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM students WHERE id = ? LIMIT 1", (student_id,))
+    result = c.fetchone()
+    conn.close()
+    if result:
+        return result[0]
+    else:
+        return None
+
 # Trang xem danh sách sinh viên
 def view_students_page():
     st.header("Danh Sách Sinh Viên Đã Đăng Ký")
@@ -325,24 +337,28 @@ if page == "Đăng Ký Sinh Viên":
                 student_id = st.text_input("MSSV")
             
             if st.button("Đăng Ký") and image_file is not None and name and student_id:
-                image = Image.open(image_file)
-                img_array = np.array(image)
-                embedding = recognizer.get_embedding(img_array)
-                if embedding is not None:
-                    if not os.path.exists('student_images'):
-                        os.makedirs('student_images')
-                    image_path = f"student_images/{student_id}_{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
-                    image.save(image_path)
-                    conn = sqlite3.connect('attendance.db')
-                    c = conn.cursor()
-                    # Chèn dữ liệu vào cơ sở dữ liệu mà không kiểm tra trùng MSSV
-                    c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)",
-                              (student_id, name, embedding.tobytes(), image_path, session_id))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"Đã đăng ký hình ảnh cho sinh viên {name} với MSSV {student_id} thành công!")
+                # Kiểm tra tính nhất quán của tên với MSSV
+                existing_name = get_student_name(student_id)
+                if existing_name and existing_name.lower().strip() != name.lower().strip():
+                    st.error(f"MSSV {student_id} đã tồn tại với tên '{existing_name}'. Vui lòng nhập đúng tên.")
                 else:
-                    st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
+                    image = Image.open(image_file)
+                    img_array = np.array(image)
+                    embedding = recognizer.get_embedding(img_array)
+                    if embedding is not None:
+                        if not os.path.exists('student_images'):
+                            os.makedirs('student_images')
+                        image_path = f"student_images/{student_id}_{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
+                        image.save(image_path)
+                        conn = sqlite3.connect('attendance.db')
+                        c = conn.cursor()
+                        c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)",
+                                  (student_id, name, embedding.tobytes(), image_path, session_id))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Đã đăng ký hình ảnh cho sinh viên {name} với MSSV {student_id} thành công!")
+                    else:
+                        st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 
 elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
@@ -354,7 +370,7 @@ elif page == "Tạo Buổi Thực Tập":
     if 'end_time' not in st.session_state:
         st.session_state.end_time = (datetime.now(tz) + timedelta(hours=1)).time()
     
-    class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
+    class_name = st.text_input("Khối lớp thực tập (ví dụ: RHM...)", "")
     session_date = st.date_input("Ngày thực tập", value=today)
     session_day_en = session_date.strftime("%A")
     session_day_vn = get_vietnamese_day(session_day_en)
