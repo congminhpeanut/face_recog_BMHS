@@ -9,3 +9,4 @@ onnxruntime
 pandas
 xlsxwriter
 openpyxl
+opencv-python
