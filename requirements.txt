@@ -10,5 +10,5 @@ pandas
 xlsxwriter
 openpyxl
 opencv-python
-streamlit_webrtc
+streamlit-webrtc
 av
