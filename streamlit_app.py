@@ -147,7 +147,7 @@ def find_closest_match(embedding, record_ids, ids, names, embeddings, threshold=
     # Tạo dictionary để nhóm embeddings theo sinh viên
     student_embeddings = {}
     for record_id, student_id, name, emb in zip(record_ids, ids, names, embeddings):
-        if tứcstudent_id not in student_embeddings:
+        if student_id not in student_embeddings:
             student_embeddings[student_id] = []
         student_embeddings[student_id].append((record_id, emb))
     
