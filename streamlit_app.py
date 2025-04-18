@@ -314,7 +314,6 @@ if page == "Đăng Ký Sinh Viên":
                         if c.fetchone() is not None:
                             st.error(f"MSSV {student_id} đã tồn tại. Vui lòng kiểm tra lại file Excel.")
                             conn.close()
-                            return
                     # Chèn dữ liệu vào cơ sở dữ liệu với các cột được phân tách rõ ràng
                     c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)",
                               (student_id, name, embedding.tobytes(), image_path, session_id))
