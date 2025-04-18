@@ -20,7 +20,7 @@ def init_db():
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS students
-                 (id TEXT PRIMARY KEY, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
+                 (record_id INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, name TEXT, embedding BLOB, image_path TEXT, session_id INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
@@ -39,7 +39,7 @@ def get_db_connection():
 # Lấy danh sách sinh viên theo session_id
 def get_students_by_session(session_id):
     conn = get_db_connection()
-    students = conn.execute('SELECT id, name, image_path, session_id FROM students WHERE session_id = ?', (session_id,)).fetchall()
+    students = conn.execute('SELECT record_id, id, name, image_path, session_id FROM students WHERE session_id = ?', (session_id,)).fetchall()
     conn.close()
     return students
 
@@ -69,29 +69,29 @@ def view_students_page():
         st.info("Chưa có sinh viên nào được đăng ký cho khối thực tập này.")
         return
     
-    df = pd.DataFrame(students, columns=['id', 'name', 'image_path', 'session_id'])
-    st.dataframe(df[['id', 'name']])
+    df = pd.DataFrame(students, columns=['record_id', 'id', 'name', 'image_path', 'session_id'])
+    st.dataframe(df[['record_id', 'id', 'name']])
     
-    selected_student_id = st.selectbox("Chọn sinh viên để xem hình ảnh", df['id'])
-    selected_student = df[df['id'] == selected_student_id].iloc[0]
+    selected_record_id = st.selectbox("Chọn bản ghi để xem hình ảnh", df['record_id'])
+    selected_student = df[df['record_id'] == selected_record_id].iloc[0]
     
     image_path = selected_student['image_path']
     if image_path and os.path.exists(image_path):
         image = Image.open(image_path)
-        st.image(image, caption=f"Hình ảnh của {selected_student['name']}", use_column_width=True)
+        st.image(image, caption=f"Hình ảnh của {selected_student['name']} (MSSV: {selected_student['id']})", use_column_width=True)
     else:
-        st.warning(f"Không tìm thấy hình ảnh cho sinh viên {selected_student['name']}.")
+        st.warning(f"Không tìm thấy hình ảnh cho bản ghi {selected_record_id}.")
     
-    if st.button("Xóa Sinh Viên Này"):
+    if st.button("Xóa Bản Ghi Này"):
         conn = get_db_connection()
-        conn.execute("DELETE FROM students WHERE id = ?", (selected_student_id,))
+        conn.execute("DELETE FROM students WHERE record_id = ?", (selected_record_id,))
         conn.commit()
         conn.close()
-        st.success(f"Đã xóa sinh viên {selected_student['name']}.")
+        st.success(f"Đã xóa bản ghi {selected_record_id}.")
         st.rerun()
     
     if st.button("Tải về Danh Sách Sinh Viên (Excel)"):
-        df_to_export = df[['id', 'name']]
+        df_to_export = df[['record_id', 'id', 'name']]
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_to_export.to_excel(writer, index=False, sheet_name='Sinh Viên')
@@ -126,28 +126,30 @@ recognizer = get_recognizer()
 def load_embeddings_by_session(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("SELECT id, name, embedding FROM students WHERE session_id = ?", (session_id,))
+    c.execute("SELECT record_id, id, name, embedding FROM students WHERE session_id = ?", (session_id,))
     students = c.fetchall()
     conn.close()
     embeddings = []
+    record_ids = []
     ids = []
     names = []
     for student in students:
-        ids.append(student[0])
-        names.append(student[1])
-        embeddings.append(np.frombuffer(student[2], dtype=np.float32))
-    return ids, names, embeddings
+        record_ids.append(student[0])
+        ids.append(student[1])
+        names.append(student[2])
+        embeddings.append(np.frombuffer(student[3], dtype=np.float32))
+    return record_ids, ids, names, embeddings
 
 # Tìm sinh viên khớp nhất
-def find_closest_match(embedding, ids, names, embeddings, threshold=20.0):
+def find_closest_match(embedding, record_ids, ids, names, embeddings, threshold=20.0):
     if not embeddings:
-        return None, None
+        return None, None, None
     distances = [np.linalg.norm(embedding - emb) for emb in embeddings]
     min_distance = min(distances)
     if min_distance < threshold:
         index = distances.index(min_distance)
-        return ids[index], names[index]
-    return None, None
+        return record_ids[index], ids[index], names[index]
+    return None, None, None
 
 # Tạo buổi thực tập
 def create_new_session(class_name, session_date, session_day, start_time, end_time, max_attendance_score):
@@ -290,36 +292,25 @@ if page == "Đăng Ký Sinh Viên":
                 name = selected_student
             else:
                 name = st.text_input("Tên Sinh Viên")
-                student_id = None  # Sẽ được gán sau
+                student_id = st.text_input("MSSV")
             
-            if st.button("Đăng Ký") and image_file is not None and name:
+            if st.button("Đăng Ký") and image_file is not None and name and student_id:
                 image = Image.open(image_file)
                 img_array = np.array(image)
                 embedding = recognizer.get_embedding(img_array)
                 if embedding is not None:
                     if not os.path.exists('student_images'):
                         os.makedirs('student_images')
-                    image_path = f"student_images/{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
+                    image_path = f"student_images/{student_id}_{name}_{datetime.now(tz).strftime('%Y%m%d%H%M%S')}.jpg"
                     image.save(image_path)
                     conn = sqlite3.connect('attendance.db')
                     c = conn.cursor()
-                    if student_id is None:
-                        # Tạo ID mới nếu không có file Excel
-                        c.execute("SELECT MAX(CAST(id AS INTEGER)) FROM students WHERE id GLOB '[0-9]*'")
-                        max_id = c.fetchone()[0]
-                        student_id = str(max_id + 1) if max_id is not None else "1"
-                    else:
-                        # Kiểm tra xem MSSV đã tồn tại chưa
-                        c.execute("SELECT id FROM students WHERE id = ?", (student_id,))
-                        if c.fetchone() is not None:
-                            st.error(f"MSSV {student_id} đã tồn tại. Vui lòng kiểm tra lại file Excel.")
-                            conn.close()
-                    # Chèn dữ liệu vào cơ sở dữ liệu với các cột được phân tách rõ ràng
+                    # Chèn dữ liệu vào cơ sở dữ liệu mà không kiểm tra trùng MSSV
                     c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)",
                               (student_id, name, embedding.tobytes(), image_path, session_id))
                     conn.commit()
                     conn.close()
-                    st.success(f"Đã đăng ký sinh viên {name} với MSSV {student_id} thành công!")
+                    st.success(f"Đã đăng ký hình ảnh cho sinh viên {name} với MSSV {student_id} thành công!")
                 else:
                     st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 
@@ -362,7 +353,7 @@ elif page == "Điểm Danh":
         session_info = get_session_info(session_id)
         st.subheader(f"Điểm danh cho buổi thực tập: {session_info['class_name']} - {session_info['session_date']} ({session_info['session_day']})")
         
-        ids, names, embeddings = load_embeddings_by_session(session_id)
+        record_ids, ids, names, embeddings = load_embeddings_by_session(session_id)
         
         image_file = st.camera_input("Chụp ảnh để điểm danh")
         uploaded_file = st.file_uploader("Hoặc tải lên ảnh để điểm danh", type=["jpg", "png", "jpeg"])
@@ -375,8 +366,8 @@ elif page == "Điểm Danh":
             
             if len(faces) == 1:
                 embedding = faces[0].embedding
-                student_id, student_name = find_closest_match(embedding, ids, names, embeddings)
-                if student_id is not None:
+                record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
+                if record_id is not None:
                     now = datetime.now(tz)
                     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
                     start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
@@ -385,15 +376,15 @@ elif page == "Điểm Danh":
                     mark_attendance(session_id, student_id, timestamp, attendance_score)
                     conn = sqlite3.connect('attendance.db')
                     c = conn.cursor()
-                    c.execute("SELECT image_path FROM students WHERE id = ?", (student_id,))
+                    c.execute("SELECT image_path FROM students WHERE record_id = ?", (record_id,))
                     image_path = c.fetchone()[0]
                     conn.close()
                     if image_path and os.path.exists(image_path):
                         image = Image.open(image_path)
-                        st.image(image, caption=f"Hình ảnh gốc của {student_name}", width=150)
+                        st.image(image, caption=f"Hình ảnh gốc của {student_name} (MSSV: {student_id})", width=150)
                     else:
-                        st.warning(f"Không tìm thấy hình ảnh gốc cho sinh viên {student_name}.")
-                    st.success(f"Đã điểm danh: {student_name} lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                        st.warning(f"Không tìm thấy hình ảnh gốc cho bản ghi {record_id}.")
+                    st.success(f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
                 else:
                     st.error("Không nhận diện được sinh viên trong ảnh.")
             else:
