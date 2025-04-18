@@ -286,7 +286,7 @@ if page == "Đăng Ký Sinh Viên":
                 st.dataframe(df)
                 student_options = df['Họ tên SV'].tolist()
                 selected_student = st.selectbox("Chọn sinh viên để đăng ký", student_options)
-                student_id = df[df['Họ tên SV'] == selected_student]['MSSV'].values[0]
+                student_id = str(df[df['Họ tên SV'] == selected_student]['MSSV'].values[0])  # Chuyển thành chuỗi để đồng nhất kiểu dữ liệu
                 name = selected_student
             else:
                 name = st.text_input("Tên Sinh Viên")
@@ -304,14 +304,23 @@ if page == "Đăng Ký Sinh Viên":
                     conn = sqlite3.connect('attendance.db')
                     c = conn.cursor()
                     if student_id is None:
+                        # Tạo ID mới nếu không có file Excel
                         c.execute("SELECT MAX(CAST(id AS INTEGER)) FROM students WHERE id GLOB '[0-9]*'")
                         max_id = c.fetchone()[0]
                         student_id = str(max_id + 1) if max_id is not None else "1"
-                    c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)", 
+                    else:
+                        # Kiểm tra xem MSSV đã tồn tại chưa
+                        c.execute("SELECT id FROM students WHERE id = ?", (student_id,))
+                        if c.fetchone() is not None:
+                            st.error(f"MSSV {student_id} đã tồn tại. Vui lòng kiểm tra lại file Excel.")
+                            conn.close()
+                            return
+                    # Chèn dữ liệu vào cơ sở dữ liệu với các cột được phân tách rõ ràng
+                    c.execute("INSERT INTO students (id, name, embedding, image_path, session_id) VALUES (?, ?, ?, ?, ?)",
                               (student_id, name, embedding.tobytes(), image_path, session_id))
                     conn.commit()
                     conn.close()
-                    st.success(f"Đã đăng ký sinh viên {name} với ID {student_id} thành công!")
+                    st.success(f"Đã đăng ký sinh viên {name} với MSSV {student_id} thành công!")
                 else:
                     st.error("Không phát hiện khuôn mặt hoặc có nhiều khuôn mặt. Vui lòng chụp lại với chỉ một khuôn mặt.")
 
