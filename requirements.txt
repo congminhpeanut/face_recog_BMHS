@@ -1,6 +1,5 @@
 numpy==1.26.4
 tensorflow
-opencv-python-headless
 streamlit
 altair
 pillow==10.4.0
@@ -9,6 +8,6 @@ onnxruntime
 pandas
 xlsxwriter
 openpyxl
-opencv-python
+opencv-python-headless
 streamlit-webrtc
 av
