@@ -90,7 +90,7 @@ def view_students_page():
     image_path = selected_student['image_path']
     if image_path and os.path.exists(image_path):
         image = Image.open(image_path)
-        st.image(image, caption=f"Hình ảnh của {selected_student['name']} (MSSV: {selected_student['id']})", use_column_width=True)
+        st.image(image, caption=f"Hình ảnh của {selected_student['name']} (MSSV: {selected_student['id']})", use_container_width=True)
     else:
         st.warning(f"Không tìm thấy hình ảnh cho bản ghi {selected_record_id}.")
     
