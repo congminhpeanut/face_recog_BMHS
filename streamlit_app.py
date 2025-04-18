@@ -57,8 +57,6 @@ def view_students_page():
     sessions = get_sessions_list()
     if not sessions:
         st.info("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
-        if st.button("Tạo Buổi Thực Tập"):
-            st.session_state['navigate_to'] = "Tạo Buổi Thực Tập"
         return
     
     session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
@@ -90,7 +88,7 @@ def view_students_page():
         conn.commit()
         conn.close()
         st.success(f"Đã xóa sinh viên {selected_student['name']}.")
-        st.rerun()  # Thay thế st.experimental_rerun()
+        st.rerun()
     
     if st.button("Tải về Danh Sách Sinh Viên (Excel)"):
         df_to_export = df[['id', 'name']]
@@ -209,6 +207,19 @@ def get_attendance_list(session_id):
     conn.close()
     return attendance_list
 
+# Hàm chuyển đổi thứ sang tiếng Việt
+def get_vietnamese_day(day):
+    days = {
+        "Monday": "Thứ Hai",
+        "Tuesday": "Thứ Ba",
+        "Wednesday": "Thứ Tư",
+        "Thursday": "Thứ Năm",
+        "Friday": "Thứ Sáu",
+        "Saturday": "Thứ Bảy",
+        "Sunday": "Chủ Nhật"
+    }
+    return days.get(day, day)
+
 # CSS để làm giao diện chuyên nghiệp
 st.markdown("""
 <style>
@@ -259,9 +270,6 @@ if page == "Đăng Ký Sinh Viên":
     sessions = get_sessions_list()
     if not sessions:
         st.warning("Chưa có khối thực tập nào. Vui lòng tạo khối thực tập trước.")
-        if st.button("Tạo Buổi Thực Tập"):
-            st.session_state['navigate_to'] = "Tạo Buổi Thực Tập"
-            st.rerun()  # Thay thế st.experimental_rerun()
     else:
         session_options = [f"{s['class_name']} - {s['session_date']} ({s['session_day']})" for s in sessions]
         selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
@@ -319,8 +327,9 @@ elif page == "Tạo Buổi Thực Tập":
     
     class_name = st.text_input("Khối lớp thực tập (ví dụ: Lớp 10A)", "")
     session_date = st.date_input("Ngày thực tập", value=today)
-    session_day = session_date.strftime("%A")
-    st.write(f"Thứ trong tuần: {session_day}")
+    session_day_en = session_date.strftime("%A")
+    session_day_vn = get_vietnamese_day(session_day_en)
+    st.write(f"Thứ trong tuần: {session_day_vn}")
     start_time = st.time_input("Giờ bắt đầu đánh giá điểm chuyên cần", value=st.session_state.start_time)
     end_time = st.time_input("Giờ kết thúc đánh giá điểm chuyên cần", value=st.session_state.end_time)
     max_attendance_score = st.number_input("Điểm chuyên cần tối đa (1-10)", min_value=1, max_value=10, value=10)
@@ -329,7 +338,7 @@ elif page == "Tạo Buổi Thực Tập":
     st.session_state.end_time = end_time
     
     if st.button("Tạo Buổi Thực Tập"):
-        session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
+        session_id = create_new_session(class_name, session_date.strftime("%Y-%m-%d"), session_day_vn, start_time.strftime("%H:%M"), end_time.strftime("%H:%M"), max_attendance_score)
         if session_id:
             st.success(f"Đã tạo buổi thực tập mới với ID: {session_id}")
 
@@ -422,6 +431,6 @@ elif page == "Xem Điểm Danh":
                 conn.commit()
                 conn.close()
                 st.success(f"Đã xóa record điểm danh của sinh viên {selected_student_id}.")
-                st.rerun()  # Thay thế st.experimental_rerun()
+                st.rerun()
         else:
             st.write("Không có sinh viên nào được ghi nhận.")
