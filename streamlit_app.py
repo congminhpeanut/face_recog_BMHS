@@ -147,7 +147,7 @@ def find_closest_match(embedding, record_ids, ids, names, embeddings, threshold=
     # Tạo dictionary để nhóm embeddings theo sinh viên
     student_embeddings = {}
     for record_id, student_id, name, emb in zip(record_ids, ids, names, embeddings):
-        if student_id not in student_embeddings:
+        if tứcstudent_id not in student_embeddings:
             student_embeddings[student_id] = []
         student_embeddings[student_id].append((record_id, emb))
     
@@ -229,9 +229,9 @@ def get_attendance_list(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     c.execute("""
-        SELECT s.id, s.name, a.timestamp, a.attendance_score, ses.class_name, ses.session_date, ses.session_day, ses.start_time, ses.end_time
-        FROM students s
-        JOIN attendance a ON s.id = a.student_id
+        SELECT a.student_id, s.name, a.timestamp, a.attendance_score, ses.class_name, ses.session_date, ses.session_day, ses.start_time, ses.end_time
+        FROM attendance a
+        JOIN (SELECT id, MAX(name) as name FROM students GROUP BY id) s ON a.student_id = s.id
         JOIN sessions ses ON a.session_id = ses.id
         WHERE a.session_id = ? AND a.status = 'present'
     """, (session_id,))
