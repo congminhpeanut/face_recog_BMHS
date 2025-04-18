@@ -8,3 +8,4 @@ insightface==0.7.3
 onnxruntime
 pandas
 xlsxwriter
+openpyxl
