@@ -10,3 +10,4 @@ pandas
 xlsxwriter
 openpyxl
 opencv-python
+av
