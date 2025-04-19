@@ -516,7 +516,7 @@ elif page == "Điểm Danh":
         
         elif attendance_method == "Real-time camera":
             webrtc_streamer(
-                key="attendance",
+                key=f"attendance_{session_id}_{attendance_method}",
                 video_processor_factory=lambda: AttendanceVideoProcessor(session_id, record_ids, ids, names, embeddings, recognizer),
                 rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
                 media_stream_constraints={"video": True, "audio": False},
