@@ -94,7 +94,6 @@ def view_students_page():
         image = Image.open(image_path)
         st.image(image, caption=f"Hình ảnh của {selected_student['name']} (MSSV: {selected_student['id']})", use_container_width=True)
         
-        # Thêm nút tải ảnh
         with open(image_path, "rb") as file:
             btn = st.download_button(
                 label="Tải ảnh về máy",
@@ -138,7 +137,6 @@ class FaceRecognizer:
             return faces[0].embedding
         return None
 
-# Cache mô hình để tránh tải lại
 @st.cache_resource
 def get_recognizer():
     return FaceRecognizer()
@@ -191,7 +189,7 @@ def find_closest_match(embedding, record_ids, ids, names, embeddings, threshold=
             return record_id, closest_student_id, name
     return None, None, None
 
-# Kiểm tra xem sinh viên đã được điểm danh trong buổi thực tập chưa
+# Kiểm tra xem sinh viên đã được điểm danh chưa
 def check_attendance(session_id, student_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -243,7 +241,7 @@ def get_session_info(session_id):
     conn.close()
     return session
 
-# Lấy danh sách sinh viên đã điểm danh trong buổi thực tập
+# Lấy danh sách sinh viên đã điểm danh
 def get_attendance_list(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
@@ -271,7 +269,7 @@ def get_vietnamese_day(day):
     }
     return days.get(day, day)
 
-# Lớp xử lý video cho streamlit-webrtc
+# Lớp xử lý video cho real-time camera
 class AttendanceVideoProcessor(VideoProcessorBase):
     def __init__(self, session_id, record_ids, ids, names, embeddings, recognizer):
         self.session_id = session_id
@@ -280,28 +278,37 @@ class AttendanceVideoProcessor(VideoProcessorBase):
         self.names = names
         self.embeddings = embeddings
         self.recognizer = recognizer
-        self.attendance_messages = []  # List of (student_name, timestamp)
-        self.frame_count = 0
-        self.process_every = 5  # Process every 5th frame
+        self.last_capture_time = 0
+        self.capture_interval = 5  # Capture every 5 seconds
+        self.detected_faces = []  # List of (student_name, timestamp, attendance_score, note, face_img, student_id)
+        self.is_running = False
+
+    def start_processing(self):
+        self.is_running = True
+
+    def stop_processing(self):
+        self.is_running = False
 
     def recv(self, frame):
-        self.frame_count += 1
-        if self.frame_count % self.process_every != 0:
-            return frame  # Skip processing
+        if not self.is_running:
+            return frame
 
+        current_time = time.time()
+        if current_time - self.last_capture_time < self.capture_interval:
+            return frame
+
+        self.last_capture_time = current_time
         img = frame.to_ndarray(format="bgr24")
         faces = self.recognizer.app.get(img)
-        current_time = time.time()
-        for face in faces:
+        if faces:
+            face = faces[0]  # Process only the first detected face
             bbox = face.bbox.astype(int)
-            cv2.rectangle(img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
             embedding = face.embedding
             record_id, student_id, student_name = find_closest_match(embedding, self.record_ids, self.ids, self.names, self.embeddings)
             if record_id is not None:
-                text = f"{student_name} ({student_id})"
-                if check_attendance(self.session_id, student_id):
-                    text += " - Đã điểm danh"
-                else:
+                face_img = img[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                face_img_resized = cv2.resize(face_img, (100, 100))  # Compact size
+                if not check_attendance(self.session_id, student_id):
                     now = datetime.now(tz)
                     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
                     session_info = get_session_info(self.session_id)
@@ -323,14 +330,10 @@ class AttendanceVideoProcessor(VideoProcessorBase):
                         note = "Điểm danh sau giờ kết thúc"
                     
                     mark_attendance(self.session_id, student_id, timestamp, attendance_score, note)
-                    self.attendance_messages.append((student_name, current_time))
-                    text += f" - Điểm danh thành công - Điểm: {attendance_score}"
-                    if note:
-                        text += f" - {note}"
-                cv2.putText(img, text, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        self.attendance_messages = [msg for msg in self.attendance_messages if current_time - msg[1] < 5]
-        out_frame = av.VideoFrame.from_ndarray(img, format="bgr24")
-        return out_frame
+                    self.detected_faces.append((student_name, timestamp, attendance_score, note, face_img_resized, student_id))
+                else:
+                    self.detected_faces.append((student_name, "Đã điểm danh", None, None, face_img_resized, student_id))
+        return frame
 
 # CSS để làm giao diện chuyên nghiệp
 st.markdown("""
@@ -364,17 +367,14 @@ h1, h2 {
 # Ứng dụng Streamlit
 st.title("Ứng Dụng Điểm Danh Thực Tập Hóa Sinh - Bộ môn Hóa Sinh")
 
-# Initialize session state for navigation
 if 'navigate_to' not in st.session_state:
     st.session_state['navigate_to'] = None
 
-# Sidebar navigation
 page = st.sidebar.radio("Chọn Chức năng", ["Đăng Ký Sinh Viên", "Tạo Buổi Thực Tập", "Điểm Danh", "Xem Sinh Viên", "Xem Điểm Danh"], key='page')
 
-# Handle navigation from button click
 if st.session_state['navigate_to']:
     page = st.session_state['navigate_to']
-    st.session_state['navigate_to'] = None  # Reset navigation
+    st.session_state['navigate_to'] = None
 
 if page == "Đăng Ký Sinh Viên":
     st.header("Đăng Ký Sinh Viên Mới")
@@ -387,7 +387,6 @@ if page == "Đăng Ký Sinh Viên":
         selected_session = st.selectbox("Chọn Khối Thực Tập", session_options)
         session_id = sessions[session_options.index(selected_session)]['id']
         
-        # Thêm tùy chọn cho phương thức đăng ký ảnh
         registration_method = st.radio("Chọn phương thức đăng ký ảnh", ["Chụp ảnh từ camera", "Tải lên ảnh từ máy tính"])
         
         if registration_method == "Chụp ảnh từ camera":
@@ -440,7 +439,6 @@ if page == "Đăng Ký Sinh Viên":
 elif page == "Tạo Buổi Thực Tập":
     st.header("Tạo Buổi Thực Tập Mới")
     today = datetime.now(tz).date()
-    today_str = today.strftime("%Y-%m-%d")
     
     if 'start_time' not in st.session_state:
         st.session_state.start_time = datetime.now(tz).time()
@@ -487,9 +485,14 @@ elif page == "Điểm Danh":
                 img_array = np.array(image)
                 faces = recognizer.app.get(img_array)
                 if len(faces) == 1:
-                    embedding = faces[0].embedding
+                    face = faces[0]
+                    bbox = face.bbox.astype(int)
+                    embedding = face.embedding
                     record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
                     if record_id is not None:
+                        face_img = img_array[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                        face_img_resized = cv2.resize(face_img, (100, 100))  # Compact size
+                        st.image(face_img_resized, caption=f"Nhận diện: {student_name}", width=100)
                         if not check_attendance(session_id, student_id):
                             now = datetime.now(tz)
                             timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -529,9 +532,14 @@ elif page == "Điểm Danh":
                 img_array = np.array(image)
                 faces = recognizer.app.get(img_array)
                 if len(faces) == 1:
-                    embedding = faces[0].embedding
+                    face = faces[0]
+                    bbox = face.bbox.astype(int)
+                    embedding = face.embedding
                     record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
                     if record_id is not None:
+                        face_img = img_array[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                        face_img_resized = cv2.resize(face_img, (100, 100))  # Compact size
+                        st.image(face_img_resized, caption=f"Nhận diện: {student_name}", width=100)
                         if not check_attendance(session_id, student_id):
                             now = datetime.now(tz)
                             timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -565,12 +573,40 @@ elif page == "Điểm Danh":
                     st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng tải lên ảnh khác.")
         
         elif attendance_method == "Real-time camera":
+            if 'processor' not in st.session_state:
+                st.session_state.processor = AttendanceVideoProcessor(session_id, record_ids, ids, names, embeddings, recognizer)
+            
+            processor = st.session_state.processor
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Start"):
+                    processor.start_processing()
+                    st.write("Đã bắt đầu chụp tự động.")
+            with col2:
+                if st.button("Stop"):
+                    processor.stop_processing()
+                    st.write("Đã dừng chụp tự động.")
+            
             webrtc_streamer(
                 key=f"attendance_{session_id}_{attendance_method}",
-                video_processor_factory=lambda: AttendanceVideoProcessor(session_id, record_ids, ids, names, embeddings, recognizer),
+                video_processor_factory=lambda: processor,
                 rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
                 media_stream_constraints={"video": True, "audio": False},
             )
+            
+            if processor.detected_faces:
+                for face in processor.detected_faces:
+                    student_name, timestamp, attendance_score, note, face_img, student_id = face
+                    st.image(face_img, caption=f"Nhận diện: {student_name}", width=100)
+                    if attendance_score is not None:
+                        message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
+                        if note:
+                            message += f" - {note}"
+                        st.success(message)
+                    else:
+                        st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
+                processor.detected_faces = []  # Clear after displaying
 
 elif page == "Xem Sinh Viên":
     view_students_page()
