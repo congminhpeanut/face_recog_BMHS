@@ -26,7 +26,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id INTEGER PRIMARY KEY, class_name TEXT, session_date TEXT, session_day TEXT, start_time TEXT, end_time TEXT, max_attendance_score INTEGER)''')
     c.execute('''CREATE TABLE IF NOT EXISTS attendance
-                 (session_id INTEGER, student_id TEXT, status TEXT, timestamp TEXT, attendance_score INTEGER)''')
+                 (session_id INTEGER, student_id TEXT, status TEXT, timestamp TEXT, attendance_score INTEGER, note TEXT)''')
     conn.commit()
     conn.close()
 
@@ -201,11 +201,11 @@ def check_attendance(session_id, student_id):
     return result is not None
 
 # Ghi nhận điểm danh
-def mark_attendance(session_id, student_id, timestamp, attendance_score):
+def mark_attendance(session_id, student_id, timestamp, attendance_score, note):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
-    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score) VALUES (?, ?, 'present', ?, ?)",
-              (session_id, student_id, timestamp, attendance_score))
+    c.execute("INSERT INTO attendance (session_id, student_id, status, timestamp, attendance_score, note) VALUES (?, ?, 'present', ?, ?, ?)",
+              (session_id, student_id, timestamp, attendance_score, note))
     conn.commit()
     conn.close()
 
@@ -248,7 +248,7 @@ def get_attendance_list(session_id):
     conn = sqlite3.connect('attendance.db')
     c = conn.cursor()
     c.execute("""
-        SELECT a.student_id, s.name, a.timestamp, a.attendance_score, ses.class_name, ses.session_date, ses.session_day, ses.start_time, ses.end_time
+        SELECT a.student_id, s.name, a.timestamp, a.attendance_score, a.note, ses.class_name, ses.session_date, ses.session_day, ses.start_time, ses.end_time
         FROM attendance a
         JOIN (SELECT id, MAX(name) as name FROM students GROUP BY id) s ON a.student_id = s.id
         JOIN sessions ses ON a.session_id = ses.id
@@ -307,10 +307,26 @@ class AttendanceVideoProcessor(VideoProcessorBase):
                     session_info = get_session_info(self.session_id)
                     start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                     end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                    attendance_score = session_info['max_attendance_score'] if start_time <= now <= end_time else 0
-                    mark_attendance(self.session_id, student_id, timestamp, attendance_score)
+                    late_threshold = start_time + timedelta(minutes=15)
+                    
+                    if now <= start_time:
+                        attendance_score = session_info['max_attendance_score']
+                        note = ""
+                    elif start_time < now <= late_threshold:
+                        attendance_score = 0
+                        note = ""
+                    elif late_threshold < now <= end_time:
+                        attendance_score = 0
+                        note = "Trễ >15p"
+                    else:
+                        attendance_score = 0
+                        note = "Điểm danh sau giờ kết thúc"
+                    
+                    mark_attendance(self.session_id, student_id, timestamp, attendance_score, note)
                     self.attendance_messages.append((student_name, current_time))
-                    text += " - Điểm danh thành công"
+                    text += f" - Điểm danh thành công - Điểm: {attendance_score}"
+                    if note:
+                        text += f" - {note}"
                 cv2.putText(img, text, (bbox[0], bbox[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         self.attendance_messages = [msg for msg in self.attendance_messages if current_time - msg[1] < 5]
         out_frame = av.VideoFrame.from_ndarray(img, format="bgr24")
@@ -479,9 +495,26 @@ elif page == "Điểm Danh":
                             timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
                             start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                             end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                            attendance_score = session_info['max_attendance_score'] if start_time <= now <= end_time else 0
-                            mark_attendance(session_id, student_id, timestamp, attendance_score)
-                            st.success(f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                            late_threshold = start_time + timedelta(minutes=15)
+                            
+                            if now <= start_time:
+                                attendance_score = session_info['max_attendance_score']
+                                note = ""
+                            elif start_time < now <= late_threshold:
+                                attendance_score = 0
+                                note = ""
+                            elif late_threshold < now <= end_time:
+                                attendance_score = 0
+                                note = "Trễ >15p"
+                            else:
+                                attendance_score = 0
+                                note = "Điểm danh sau giờ kết thúc"
+                            
+                            mark_attendance(session_id, student_id, timestamp, attendance_score, note)
+                            message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
+                            if note:
+                                message += f" - {note}"
+                            st.success(message)
                         else:
                             st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
                     else:
@@ -504,9 +537,26 @@ elif page == "Điểm Danh":
                             timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
                             start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                             end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                            attendance_score = session_info['max_attendance_score'] if start_time <= now <= end_time else 0
-                            mark_attendance(session_id, student_id, timestamp, attendance_score)
-                            st.success(f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}")
+                            late_threshold = start_time + timedelta(minutes=15)
+                            
+                            if now <= start_time:
+                                attendance_score = session_info['max_attendance_score']
+                                note = ""
+                            elif start_time < now <= late_threshold:
+                                attendance_score = 0
+                                note = ""
+                            elif late_threshold < now <= end_time:
+                                attendance_score = 0
+                                note = "Trễ >15p"
+                            else:
+                                attendance_score = 0
+                                note = "Điểm danh sau giờ kết thúc"
+                            
+                            mark_attendance(session_id, student_id, timestamp, attendance_score, note)
+                            message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
+                            if note:
+                                message += f" - {note}"
+                            st.success(message)
                         else:
                             st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
                     else:
@@ -539,7 +589,7 @@ elif page == "Xem Điểm Danh":
         attendance_list = get_attendance_list(session_id)
         
         if attendance_list:
-            df = pd.DataFrame(attendance_list, columns=['MSSV', 'Họ tên SV', 'Giờ điểm danh', 'Điểm', 'Khối thực tập', 'Ngày', 'Thứ', 'Giờ bắt đầu', 'Giờ kết thúc'])
+            df = pd.DataFrame(attendance_list, columns=['MSSV', 'Họ tên SV', 'Giờ điểm danh', 'Điểm', 'Ghi chú', 'Khối thực tập', 'Ngày', 'Thứ', 'Giờ bắt đầu', 'Giờ kết thúc'])
             st.dataframe(df)
             
             if st.button("Tải về Danh Sách Điểm Danh (Excel)"):
