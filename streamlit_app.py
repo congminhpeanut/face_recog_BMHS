@@ -569,7 +569,7 @@ elif page == "Điểm Danh":
                                     image_path = get_student_image(record_id)
                                     if image_path and os.path.exists(image_path):
                                         student_image = Image.open(image_path)
-                                        placeholder.image(student_image.resize((300, 300)), caption=f"Hình ảnh của {student_name} (MSSV: {student_Page)"))
+                                        placeholder.image(student_image.resize((300, 300)), caption=f"Hình ảnh của {student_name} (MSSV: {student_Page)")
                                 else:
                                     placeholder.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
                             else:
