@@ -528,7 +528,7 @@ elif page == "Điểm Danh":
         
         elif attendance_method == "Real-time camera":
             st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
-            image = camera_input_live()
+            image = camera_input_live(facing_mode="environment")
             if image is not None:
                 image = Image.open(image)
                 img_array = np.array(image)
