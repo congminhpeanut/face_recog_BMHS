@@ -9,5 +9,4 @@ pandas
 xlsxwriter
 openpyxl
 opencv-python-headless
-streamlit-webrtc
-av
+streamlit-camera-input-live
