@@ -528,17 +528,10 @@ elif page == "Điểm Danh":
         
         elif attendance_method == "Real-time camera":
             st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
-            image_data = camera_input_live()
-            if image_data is not None:
-                # Kiểm tra và xử lý dữ liệu hình ảnh từ camera_input_live()
-                if isinstance(image_data, Image.Image):
-                    img_array = np.array(image_data)
-                elif isinstance(image_data, np.ndarray):
-                    img_array = image_data
-                else:
-                    st.error("Dữ liệu hình ảnh từ camera không được hỗ trợ.")
-                    img_array = None
-        
+            image = camera_input_live()
+            if image is not None:
+                image = Image.open(image)
+                img_array = np.array(image)
                 if img_array is not None:
                     # Chuyển đổi từ 4 kênh sang 3 kênh nếu cần
                     if len(img_array.shape) == 3 and img_array.shape[2] == 4:
