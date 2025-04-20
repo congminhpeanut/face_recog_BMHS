@@ -311,7 +311,7 @@ h1, h2 {
 """, unsafe_allow_html=True)
 
 # Ứng dụng Streamlit
-st.title("Ứng Dụng Điểm Danh Thông Minh - Bộ môn Hóa Sinh")
+st.title("Ứng Dụng Điểm Danh Thông Minh")
 
 # Initialize session state for navigation
 if 'navigate_to' not in st.session_state:
@@ -529,8 +529,8 @@ elif page == "Điểm Danh":
             st.write("Chức năng này sẽ tự động chụp ảnh sau mỗi 5 giây. Nhấn nút để bắt đầu.")
             if st.button("Bắt đầu chụp tự động"):
                 placeholder = st.empty()
+                image_file = st.camera_input("Chụp ảnh để điểm danh", key=f"camera_{time.time()}")
                 while True:
-                    image_file = st.camera_input("Chụp ảnh để điểm danh", key=f"camera_{time.time()}")
                     if image_file is not None:
                         image = Image.open(image_file)
                         img_array = np.array(image)
