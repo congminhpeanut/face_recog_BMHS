@@ -538,8 +538,11 @@ elif page == "Điểm Danh":
                 else:
                     st.error("Dữ liệu hình ảnh từ camera không được hỗ trợ.")
                     img_array = None
-                
+        
                 if img_array is not None:
+                    # Chuyển đổi từ 4 kênh sang 3 kênh nếu cần
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 4:
+                        img_array = img_array[:, :, :3]  # Loại bỏ kênh alpha
                     faces = recognizer.app.get(img_array)
                     if len(faces) == 1:
                         embedding = faces[0].embedding
@@ -551,7 +554,7 @@ elif page == "Điểm Danh":
                                 start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                                 end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                                 late_threshold = end_time + timedelta(minutes=15)
-                                
+                        
                                 if start_time <= now <= end_time:
                                     attendance_score = session_info['max_attendance_score']
                                     note = ""
@@ -564,13 +567,13 @@ elif page == "Điểm Danh":
                                 else:
                                     attendance_score = 0
                                     note = "Điểm danh sau giờ kết thúc"
-                                
+                        
                                 mark_attendance(session_id, student_id, timestamp, attendance_score, note)
                                 message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
                                 if note:
                                     message += f" - {note}"
                                 st.success(message)
-                                
+                        
                                 # Hiển thị hình ảnh của sinh viên
                                 image_path = get_student_image(record_id)
                                 if image_path and os.path.exists(image_path):
