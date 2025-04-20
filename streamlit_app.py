@@ -11,7 +11,7 @@ import os
 import pytz
 import pandas as pd
 from io import BytesIO
-from streamlit_camera_input_live import camera_input_live
+from streamlit-camera-input-live import camera-input-live
 
 # Thiết lập múi giờ Việt Nam (UTC+7)
 tz = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -528,7 +528,7 @@ elif page == "Điểm Danh":
         
         elif attendance_method == "Real-time camera":
             st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
-            image = camera_input_live()
+            image = camera-input-live()
             if image is not None:
                 image = Image.open(image)
                 img_array = np.array(image)
