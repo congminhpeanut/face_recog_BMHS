@@ -11,7 +11,7 @@ import os
 import pytz
 import pandas as pd
 from io import BytesIO
-from streamlit-camera-input-live import camera-input-live
+from streamlit_camera_input_live import camera-input-live
 
 # Thiết lập múi giờ Việt Nam (UTC+7)
 tz = pytz.timezone('Asia/Ho_Chi_Minh')
