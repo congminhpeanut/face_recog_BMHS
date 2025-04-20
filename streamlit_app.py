@@ -531,8 +531,8 @@ elif page == "Điểm Danh":
             image = camera_input_live()
             if image is not None:
                 #image = Image.open(image(value))
-                img_array = np.array(image(value))
-                faces = recognizer.app.get(img_array)
+                #img_array = np.array(image(value))
+                faces = recognizer.app.get(image(value))
                 if len(faces) == 1:
                     embedding = faces[0].embedding
                     record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
