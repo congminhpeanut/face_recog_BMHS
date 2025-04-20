@@ -530,8 +530,8 @@ elif page == "Điểm Danh":
             st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
             image = camera_input_live()
             if image is not None:
-                image = Image.open(image(value))
-                img_array = np.array(image)
+                #image = Image.open(image(value))
+                img_array = np.array(image(value))
                 faces = recognizer.app.get(img_array)
                 if len(faces) == 1:
                     embedding = faces[0].embedding
