@@ -11,6 +11,7 @@ import os
 import pytz
 import pandas as pd
 from io import BytesIO
+from streamlit_camera_input_live import camera_input_live
 
 # Thiết lập múi giờ Việt Nam (UTC+7)
 tz = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -526,57 +527,53 @@ elif page == "Điểm Danh":
                     st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng tải lên ảnh khác.")
         
         elif attendance_method == "Real-time camera":
-            st.write("Chức năng này sẽ tự động chụp ảnh sau mỗi 5 giây. Nhấn nút để bắt đầu.")
-            if st.button("Bắt đầu chụp tự động"):
-                placeholder = st.empty()
-                image_file = st.camera_input("Chụp ảnh để điểm danh", key=f"camera_{time.time()}")
-                while True:
-                    if image_file is not None:
-                        image = Image.open(image_file)
-                        img_array = np.array(image)
-                        faces = recognizer.app.get(img_array)
-                        if len(faces) == 1:
-                            embedding = faces[0].embedding
-                            record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
-                            if record_id is not None:
-                                if not check_attendance(session_id, student_id):
-                                    now = datetime.now(tz)
-                                    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-                                    start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                                    end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                                    late_threshold = end_time + timedelta(minutes=15)
-                                    
-                                    if start_time <= now <= end_time:
-                                        attendance_score = session_info['max_attendance_score']
-                                        note = ""
-                                    elif end_time < now < late_threshold:
-                                        attendance_score = 0
-                                        note = ""
-                                    elif late_threshold <= now:
-                                        attendance_score = 0
-                                        note = "Trễ >15p"
-                                    else:
-                                        attendance_score = 0
-                                        note = "Điểm danh sau giờ kết thúc"
-                                    
-                                    mark_attendance(session_id, student_id, timestamp, attendance_score, note)
-                                    message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
-                                    if note:
-                                        message += f" - {note}"
-                                    placeholder.success(message)
-                                    
-                                    # Hiển thị hình ảnh của sinh viên
-                                    image_path = get_student_image(record_id)
-                                    if image_path and os.path.exists(image_path):
-                                        student_image = Image.open(image_path)
-                                        placeholder.image(student_image.resize((300, 300)), caption=f"Hình ảnh của {student_name} (MSSV: {student_Page})")
-                                else:
-                                    placeholder.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
+            st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
+            image = camera_input_live()
+            if image is not None:
+                image = Image.open(image)
+                img_array = np.array(image)
+                faces = recognizer.app.get(img_array)
+                if len(faces) == 1:
+                    embedding = faces[0].embedding
+                    record_id, student_id, student_name = find_closest_match(embedding, record_ids, ids, names, embeddings)
+                    if record_id is not None:
+                        if not check_attendance(session_id, student_id):
+                            now = datetime.now(tz)
+                            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+                            start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                            end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+                            late_threshold = end_time + timedelta(minutes=15)
+                            
+                            if start_time <= now <= end_time:
+                                attendance_score = session_info['max_attendance_score']
+                                note = ""
+                            elif end_time < now < late_threshold:
+                                attendance_score = 0
+                                note = ""
+                            elif late_threshold <= now:
+                                attendance_score = 0
+                                note = "Trễ >15p"
                             else:
-                                placeholder.error("Không nhận diện được sinh viên trong ảnh.")
+                                attendance_score = 0
+                                note = "Điểm danh sau giờ kết thúc"
+                            
+                            mark_attendance(session_id, student_id, timestamp, attendance_score, note)
+                            message = f"Đã điểm danh: {student_name} (MSSV: {student_id}) lúc {timestamp} - Điểm chuyên cần: {attendance_score}"
+                            if note:
+                                message += f" - {note}"
+                            st.success(message)
+                            
+                            # Hiển thị hình ảnh của sinh viên
+                            image_path = get_student_image(record_id)
+                            if image_path and os.path.exists(image_path):
+                                student_image = Image.open(image_path)
+                                st.image(student_image.resize((300, 300)), caption=f"Hình ảnh của {student_name} (MSSV: {student_id})")
                         else:
-                            placeholder.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng chụp lại.")
-                    time.sleep(5)
+                            st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
+                    else:
+                        st.error("Không nhận diện được sinh viên trong ảnh.")
+                else:
+                    st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng thử lại.")
 
 elif page == "Xem Sinh Viên":
     view_students_page()
