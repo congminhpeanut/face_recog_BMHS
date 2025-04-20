@@ -495,15 +495,15 @@ elif page == "Điểm Danh":
                             timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
                             start_time = datetime.strptime(f"{session_info['session_date']} {session_info['start_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
                             end_time = datetime.strptime(f"{session_info['session_date']} {session_info['end_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-                            late_threshold = start_time + timedelta(minutes=15)
+                            late_threshold = end_time + timedelta(minutes=15)
                             
-                            if now <= start_time:
+                            if start_time <= now <= end_time:
                                 attendance_score = session_info['max_attendance_score']
                                 note = ""
-                            elif start_time < now <= late_threshold:
+                            elif end_time < now < late_threshold:
                                 attendance_score = 0
                                 note = ""
-                            elif late_threshold < now <= end_time:
+                            elif late_threshold <= now:
                                 attendance_score = 0
                                 note = "Trễ >15p"
                             else:
