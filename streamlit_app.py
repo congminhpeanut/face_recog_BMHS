@@ -581,6 +581,7 @@ elif page == "Điểm Danh":
                                     'id': student_id,
                                     'image': student_image
                                     }
+                                    st.rerun()
                             else:
                                 pass
                                 #st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
