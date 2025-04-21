@@ -530,7 +530,7 @@ elif page == "Điểm Danh":
             st.write("Chức năng này sẽ tự động chụp ảnh và điểm danh khi phát hiện khuôn mặt.")
     
             # Khởi tạo trạng thái trong st.session_state nếu chưa có
-            if 'last_attended_student' not in st.        session_state:
+            if 'last_attended_student' not in st.session_state:
                 st.session_state['last_attended_student'] =None
     
             image = camera_input_live()
