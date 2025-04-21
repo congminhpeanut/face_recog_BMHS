@@ -573,11 +573,14 @@ elif page == "Điểm Danh":
                                     student_image = Image.open(image_path)
                                     st.image(student_image.resize((300, 300)), caption=f"Hình ảnh của {student_name} (MSSV: {student_id})")
                             else:
-                                st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
+                                pass
+                                #st.warning(f"Sinh viên {student_name} (MSSV: {student_id}) đã được điểm danh trong buổi thực tập này.")
                         else:
-                            st.error("Không nhận diện được sinh viên trong ảnh.")
+                            pass
+                            #st.error("Không nhận diện được sinh viên trong ảnh.")
                     else:
-                        st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng thử lại.")
+                        pass
+                        #st.error("Ảnh không chứa đúng một khuôn mặt. Vui lòng thử lại.")
 
 elif page == "Xem Sinh Viên":
     view_students_page()
